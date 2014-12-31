@@ -1,12 +1,6 @@
-<script type="text/javascript"
-  src="https://c328740.ssl.cf1.rackcdn.com/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML">
-  </script>
-
 PEGrid
 ======
 
 Write a grid of potential energies of an adsorbate molecule in a nanoporous material
 
-$x^2$
-
-\(x^2\)
+![image](https://www.dropbox.com/s/2kdo64m8yq092e9/example.png?dl=0)
