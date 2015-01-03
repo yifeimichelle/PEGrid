@@ -5,6 +5,57 @@ include("framework.jl")
 include("forcefield.jl")
 
 
+function _E_vdw_at_point!(x_f::Float64, y_f::Float64, z_f::Float64,
+            pos_array::Array{Float64}, epsilons::Array{Float64}, sigmas::Array{Float64},
+            framework::Framework,
+            rep_factors::Array{Int}, cutoff::Float64)
+    """
+    Compute Van der Waals interaction energy via the Lennard Jones potential.
+    Vectorized: this function takes an Array{Float64} of :math:`r^2` distances from each framework atom
+
+    :param Float64 x_f,y_f,z_f: fractional coordinates at which we seek to compute energy
+    :param Array{Float64} pos_array: 3 by natoms array of fractional coords of framework atoms in primitive unit cell
+    :param Array{Float64} epsilons: Lennard-Jones epsilon parameters corresponding to each framework atom in the array
+    :param Array{Float64} sigmas: Lennard-Jones sigma parameters corresponding to each framework atom in the array
+    :param Array{Int} rep_factors: x,y,z replication factors of primitive unit cell for PBCs
+    :param Float64 cutoff: Lennard-Jones cutoff distance
+    :returns: Float64 E: energy of adsorbate at (x_f,y_f,z_f) in Kelvin (well, same units as epsilon)
+    """
+    E = 0.0  # initialize energy at this grid point
+    # loop over adjacent unit cells to implement periodic boundary conditions
+    for rep_x = -rep_factors[1]:rep_factors[1]
+        for rep_y = -rep_factors[2]:rep_factors[2]
+            for rep_z = -rep_factors[3]:rep_factors[3] 
+
+                # vector of grid pt. Can effectively move grid point instead of adding rep_factors in fractional coords to framework atoms
+                x_gridpt = [x_f + 1.0 * rep_x, 
+                            y_f + 1.0 * rep_y,
+                            z_f + 1.0 * rep_z]
+                
+                # what follows is vectorized over the framework atoms in the primitive unit cell
+                # subtract from each framework atom position the grid point
+                dx = broadcast(-, pos_array, x_gridpt)
+                
+                # transfer to Cartesian coords
+                dx = framework.f_to_cartesian_mtrx * dx
+                
+                # compute distance squared between grid point and each framework atom, r2
+                r2 = sum(dx .* dx, 1)
+
+                # select which interactions are within the cutoff distance
+                idx_within_cutoff = r2 .< cutoff * cutoff
+
+                # compute VdW energy with Lennard-Jones potential.
+                sig_ovr_r6 = sigmas[idx_within_cutoff] .* sigmas[idx_within_cutoff] ./ r2[idx_within_cutoff]  # (sigma / r )^2
+                sig_ovr_r6 = sig_ovr_r6 .* sig_ovr_r6 .* sig_ovr_r6
+                E += sum(4.0 * epsilons[idx_within_cutoff] .* sig_ovr_r6 .* (sig_ovr_r6 - 1.0))
+            end  # end replication in x-direction
+        end  # end replication in y-direction
+    end  # end replication in z-direction
+
+    return E  # in Kelvin
+end
+
 function get_replication_factors(f_to_cartesian_mtrx::Array{Float64}, cutoff::Float64)
     """
     Get replication factors for the unit cell such that only directly adjacent ghost unit cells are required for consideration in applying periodic boundary conditions (PBCs).
@@ -98,7 +149,7 @@ function E_vdw_at_point(structurename::String, forcefieldname::String, adsorbate
     # get position array and epsilons/sigmas for easy computation
     pos_array, epsilons, sigmas = _generate_pos_array_epsilons_sigmas(framework, forcefield)
 
-    return _E_vdw_at_point(x_f, y_f, z_f,
+    return _E_vdw_at_point!(x_f, y_f, z_f,
             pos_array, epsilons, sigmas, 
             framework,
             rep_factors, cutoff)

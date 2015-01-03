@@ -15,11 +15,11 @@ PEGrid requires the `DataFrames` package in Julia. To install, type in Julia: `P
 
 #### Crystal structure file (.cssr)
 
-PEGrid reads crystal structure files in the .cssr format. If needed to convert .cif to .cssr, use Zeo++. 
+PEGrid reads crystal structure files in the .cssr format. The popular .cif format can be converted to .cssr using [Zeo++](http://www.maciejharanczyk.info/Zeopp/):
 
     ./network -cssr ${yourstructurename}.cif
 
-Place the crystal structure files in `data/structures`.
+Place the .cssr crystal structure files in `data/structures`.
 
 #### Force field file (.csv)
 
@@ -31,7 +31,7 @@ Currently, only adsorbates modeled as a Lennard-Jones sphere are supported; no e
 
 The Lennard-Jones parameters for the cross-interaction between adsorbate *a* and atom type *i* are computed from the pure *a-a*, *i-i* interactions using the following Lorenz-Berthelot mixing rules:
 
-<a href="url"><img src="https://www.dropbox.com/s/hlod22zvhgejc8r/mixingrules.png?dl=1" align="middle" height="120" ></a>
+<a href="url"><img src="https://www.dropbox.com/s/hlod22zvhgejc8r/mixingrules.png?dl=1" align="middle" height="100" ></a>
 
 The pure *i-i* and *a-a* Lennard-Jones interaction parameters must be stored in `data/forcefields/${yourforcefield}.csv`.
 
@@ -63,12 +63,14 @@ Use VisIt visualization tool.
 
 #### Replicating a .cssr to an .xyz file
 
-An .xyz file contains a list of atoms in the crystal structure file, their identities, and their positions in Cartesian coordinates. An .xyz file is useful for visualizing the atoms of the crystal structure file. PEGrid can replicate the unit cell of the crystal in each direction, so that the 'home' unit cell is in the center, and output a .xyz of the replicated crystal structure file.
+An .xyz file contains a list of atoms in the crystal structure file, their identities, and their positions in Cartesian coordinates. An .xyz file is useful for visualizing the atoms of the crystal structure. PEGrid can replicate the unit cell of the crystal in each direction, so that the 'home' unit cell is in the center, and output a .xyz of the replicated crystal structure file.
 
 The function `replicate_cssr_to_xyz` will replicate the unit cell of the crystal and save an .xyz file in the current directory (just above the `data` folder).
 
     include("src/framework.jl")
     replicate_cssr_to_xyz(${yourstructurename})
+
+The function `replicate_cssr_to_xyz(structurename::String; rep_factor::Int=1)` takes an additional, optional argument `rep_factor` which is the number of times we desire to replicate the unit cell in the .cssr file.
 
 #### Computing the density of a crystal structure
 
@@ -81,6 +83,8 @@ Then, call the function `crystaldensity(framework::Framework)`
 
     rho = crystaldensity(framework)
 
+This returns the crystal density of the framework (units: kg/m3).
+
 #### Generating a .vtk mesh file of edges of unit cell 
 
 The .vtk mesh file allows us to visualize the boundaries of the unit cell. To generate a .vtk of the unit cell boundary, use the following Julia code:
@@ -88,7 +92,7 @@ The .vtk mesh file allows us to visualize the boundaries of the unit cell. To ge
     include("src/framework.jl")
     write_unitcell_boundary_vtk("${yourstructurename}")
 
-A `${yourstructurename}.vtk` will be written in the working directory (just above the `data` directory).
+The .vtk file `${yourstructurename}.vtk` will be written in the working directory (just above the `data` directory).
 
 #### Computing the potential energy of an adsorbate at a particular point
 
@@ -96,5 +100,7 @@ e.g., to compute the potential energy of adsorbate `CH4` in crystal structure `I
 
     include("src/energyutils.jl")
     E = E_vdw_at_point("IRMOF-1", "UFF", "CH4", x_f, y_f, z_f, cutoff=12.5)
+
+This will return the energy of the adsorbate at that fractional coordinate (units: Kelvin).
 
 - [ ] include function to convert from Cartesian to fractional for this function
