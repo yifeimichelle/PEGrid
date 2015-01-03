@@ -157,3 +157,30 @@ function replicate_cssr_to_xyz(frameworkname::String; rep_factor::Int=1)
     end
     close(xyz_file)
 end
+
+function write_unitcell_boundary_vtk(frameworkname::String)
+    """
+    Write unit cell boundary as a .vtk file for visualizing the unit cell.
+    """
+    framework = constructframework(frameworkname)
+    vtk_file = open(framework.structurename * ".vtk", "w")
+    
+    # write first lines
+    @printf(vtk_file, "# vtk DataFile Version 2.0\nunit cell boundary\nASCII\nDATASET POLYDATA\nPOINTS 8 double\n") 
+
+    # write points on boundary of unit cell
+    for i=0:1
+        for j=0:1
+            for k=0:1
+            x = [i, j, k] # fractional coordinate
+            cellpoint = framework.f_to_cartesian_mtrx * x
+            @printf(vtk_file, "%.3f %.3f %.3f\n", cellpoint[1], cellpoint[2], cellpoint[3])
+            end
+        end
+    end
+
+    # define connections
+    @printf(vtk_file, "LINES 12 36\n2 0 1\n2 0 2\n2 1 3\n2 2 3\n2 4 5\n2 4 6\n2 5 7\n2 6 7\n2 0 4\n2 1 5\n2 2 6\n2 3 7\n")
+    close(vtk_file)
+end
+
