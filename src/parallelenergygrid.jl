@@ -1,3 +1,14 @@
+function evaluate_expressions_on_all_cores(;kwargs...)
+    """
+    Evaluates a given expression on each process. For broadcasting variables
+    """
+    for (nm, val) in kwargs # unpacks expressions in args
+        for p in workers()
+            @spawnat p eval(Main, Expr(:(=), nm, val))
+        end
+    end
+end
+
 function parallel_writegrid(adsorbate::String, structurename::String, forcefieldname::String; gridspacing=0.1, gridfilename=None, cutoff=12.5)
     """
     Compute the potential energy of an adsorbate molecule on a 3D grid of points superimposed on the unit cell of the structure.
@@ -7,19 +18,30 @@ function parallel_writegrid(adsorbate::String, structurename::String, forcefield
 
     :param: String adsorbate: the name of the adsorbate molecule, corresponding to the forcefield file
     """
-    # work-around to send these vars passed into function to all cores
-    @everywhere {
-        structurename = "IRMOF-1"
-        forcefieldname = "UFF"
-        adsorbate = "Xe"
-        cutoff = 12.5
-        gridspacing = 1.0
-    }
+ #     @everywhere {
+ #         structurename = "IRMOF-1"
+ #         forcefieldname = "UFF"
+ #         adsorbate = "Xe"
+ #         cutoff = 12.5
+ #         gridspacing = 1.0
+ #     }
 
     @printf("Number of parallel cores: %d\n", nprocs())
-    require("framework.jl")
-    require("forcefield.jl")
-    require("energyutils.jl")
+    require("src/framework.jl")  # these statements load these files on all cores
+    require("src/forcefield.jl")
+    require("src/energyutils.jl")
+    # broadcast function arguments to all cores
+    evaluate_expressions_on_all_cores(adsorbate=adsorbate)
+    evaluate_expressions_on_all_cores(structurename=structurename)
+    evaluate_expressions_on_all_cores(forcefieldname=forcefieldname)
+    evaluate_expressions_on_all_cores(gridspacing=gridspacing)
+    evaluate_expressions_on_all_cores(cutoff=cutoff)
+    
+    for i=1:nprocs()
+        @printf("value of cutoff %f\n", cutoff)
+        @printf("value of structurename %s\n", structurename)
+        @printf("value of ffname %s\n", forcefieldname)
+        end
 
     # load the framework on all cores
     @printf("Constructing framework object on all cores for %s...\n", structurename)
@@ -97,6 +119,7 @@ function parallel_writegrid(adsorbate::String, structurename::String, forcefield
                                         rep_factors, cutoff)
             end
         end
+        
         return E_yz_sheet
     end
         
@@ -124,6 +147,7 @@ function parallel_writegrid(adsorbate::String, structurename::String, forcefield
                 @printf(gridfile, "\n")  # new line after z loop
             end
         end
+
     end
 
     close(gridfile)
