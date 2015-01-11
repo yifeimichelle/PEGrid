@@ -3,7 +3,7 @@ function evaluate_expressions_on_all_cores(;kwargs...)
     Evaluates a given expression on each process. For broadcasting variables
     """
     for (nm, val) in kwargs # unpacks expressions in args
-        for p in workers()
+        for p = 1:nprocs() #in workers()
             @spawnat p eval(Main, Expr(:(=), nm, val))
         end
     end
@@ -30,19 +30,14 @@ function parallel_writegrid(adsorbate::String, structurename::String, forcefield
     require("src/framework.jl")  # these statements load these files on all cores
     require("src/forcefield.jl")
     require("src/energyutils.jl")
+
     # broadcast function arguments to all cores
     evaluate_expressions_on_all_cores(adsorbate=adsorbate)
     evaluate_expressions_on_all_cores(structurename=structurename)
     evaluate_expressions_on_all_cores(forcefieldname=forcefieldname)
     evaluate_expressions_on_all_cores(gridspacing=gridspacing)
     evaluate_expressions_on_all_cores(cutoff=cutoff)
-    
-    for i=1:nprocs()
-        @printf("value of cutoff %f\n", cutoff)
-        @printf("value of structurename %s\n", structurename)
-        @printf("value of ffname %s\n", forcefieldname)
-        end
-
+   
     # load the framework on all cores
     @printf("Constructing framework object on all cores for %s...\n", structurename)
     @everywhere framework = constructframework(structurename)
