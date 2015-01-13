@@ -42,7 +42,7 @@ end
 
 function constructframework(structurename::String)
     """
-    Construct and fill in information on framework type from a .cssr crystal structure file
+    Construct and fill in information on Framework type from a .cssr crystal structure file
 
     :param String structurename: name of structure. Will try to import file structurename.cssr
     """
@@ -140,7 +140,7 @@ function replicate_cssr_to_xyz(frameworkname::String; rep_factor::Int=1)
     """
     framework = constructframework(frameworkname)
     xyz_file = open(framework.structurename * ".xyz", "w")
-    @printf(xyz_file, "%d\n\n", framework.natoms * rep_factor^3)
+    @printf(xyz_file, "%d\n\n", framework.natoms * (2 * rep_factor + 1)^3)
 
     for a = 1:framework.natoms
         for rep_x = -rep_factor:rep_factor
