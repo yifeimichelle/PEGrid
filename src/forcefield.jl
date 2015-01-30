@@ -6,7 +6,7 @@ using DataFrames
 
 type Forcefield
     """
-    Store elements of a forcefield
+    Store attributes of a forcefield
     """
     name::String
 
@@ -33,7 +33,7 @@ end
     
 function constructforcefield(name::String, adsorbate::String; cutoff::Float64=12.5, mixingrules="Lorenz-Berthelot")
     """
-    Construct a force field object by importing force field file
+    Return a Forcefield type filled in by importing force field file
     """
     # construct object
     forcefield = Forcefield()

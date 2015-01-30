@@ -31,7 +31,16 @@ function _E_vdw_at_point!(x_f::Float64, y_f::Float64, z_f::Float64,
                 x_gridpt = [x_f + 1.0 * rep_x, 
                             y_f + 1.0 * rep_y,
                             z_f + 1.0 * rep_z]
-                
+ #                 # loop version, 4 times slower than vectorized version
+ #                 @simd for a=1:framework.natoms
+ #                    @inbounds dx = framework.f_to_cartesian_mtrx * (pos_array[:,a] - x_gridpt)
+ #                    r2 = dot(dx, dx)
+ #                    @inbounds sig_ovr_r6 = sigmas[a] * sigmas[a] / r2
+ #                    sig_ovr_r6 = sig_ovr_r6 * sig_ovr_r6 * sig_ovr_r6
+ #                    if r2 < cutoff * cutoff
+ #                         @inbounds E += 4.0 * epsilons[a] * sig_ovr_r6 * (sig_ovr_r6 - 1.0)  
+ #                    end
+ #                 end
                 # what follows is vectorized over the framework atoms in the primitive unit cell
                 # subtract from each framework atom position the grid point
                 dx = broadcast(-, pos_array, x_gridpt)

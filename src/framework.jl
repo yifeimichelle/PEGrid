@@ -139,7 +139,10 @@ function replicate_cssr_to_xyz(frameworkname::String; rep_factor::Int=1)
     :param Int rep_factor: number of times to replicate unit cell
     """
     framework = constructframework(frameworkname)
-    xyz_file = open(framework.structurename * ".xyz", "w")
+    if ! isdir(homedir() * "/PEGrid_output")
+       mkdir(homedir() * "/PEGrid_output") 
+    end
+    xyz_file = open(homedir() * "/PEGrid_output/" * framework.structurename * ".xyz", "w")
     @printf(xyz_file, "%d\n\n", framework.natoms * (2 * rep_factor + 1)^3)
 
     for a = 1:framework.natoms
