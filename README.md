@@ -5,7 +5,7 @@ This code, written in Julia, is for visualizing the potential energy contours of
 
 With this .cube energy grid file, we can visualize the potential energy contours of the adsorbate inside the pores of the crystal as in the figure below.
 
-<a href="url"><img src="https://www.dropbox.com/s/2kdo64m8yq092e9/example.png?dl=1" align="middle" height="500" width="500" ></a>
+<a href="url"><img src="https://www.dropbox.com/s/uzw1ry8ap9jguup/cover.jpeg?dl=1" align="middle" height="500" width="370" ></a>
 
 ## Necessary data
 
@@ -27,7 +27,7 @@ The force field is the model and parameters used to describe the potential energ
 
 <a href="url"><img src="https://www.dropbox.com/s/zfn2titfiyp8w6j/LJpotential.png?dl=1" align="middle" height="60" ></a>
 
-Currently, only adsorbates modeled as a Lennard-Jones sphere are supported; no electrostatic charges or more complex molecules.
+Currently, only adsorbates modeled as a Lennard-Jones sphere are supported; electrostatic charges and more complex molecules are not yet supported.
 
 The Lennard-Jones parameters for the cross-interaction between adsorbate *a* and atom type *i* are computed from the pure *a-a*, *i-i* interactions using the following Lorenz-Berthelot mixing rules:
 
@@ -43,7 +43,13 @@ In order to calculate the crystal density of the framework, PEGrid stores the at
 
 ## How to write the grid
 
-As an example, if we want to use the `UFF` forcefield to compute the energy of adsorbate molecule `CH4` (modeled as a Lennard-Jones sphere) in crystal structure `IRMOF-1` using a Lennard-Jones cutoff of 12.5 Angstrom on a 3D grid of points with a spacing of 1.0 Angstrom, the following two lines of code in Julia will write a .cube grid file (units: kJ/mol) to your home directory.
+PEGrid computes the potential energy grid in both a serial implementation as well as a parallel implementation that fully utilizes the cores on your computer (much faster! [Blog post](http://mathemathinking.com/uncategorized/parallel-monte-carlo-in-julia/)).
+
+As an example, say we want to use the `UFF` forcefield to compute the energy of adsorbate molecule `CH4` (modeled as a Lennard-Jones sphere) in crystal structure `IRMOF-1` using a Lennard-Jones cutoff of 12.5 Angstrom on a 3D grid of points with a spacing of 1.0 Angstrom.
+
+### Serial implementation
+
+The following two lines of code in Julia will write a .cube grid file (units: kJ/mol) to your home directory.
 
     include("src/energygrid.jl")
     writegrid("CH4", "IRMOF-1", "UFF", gridspacing=1.0, cutoff=12.5)
@@ -52,6 +58,23 @@ As an example, if we want to use the `UFF` forcefield to compute the energy of a
 * `IRMOF-1`: corresponds to crystal structure file data/structures/IRMOF-1.cssr
 
 I recommend using the IJulia notebook. The code will print off the progress of the grid writing every 10%. Be patient, as computing fine grids and/or large unit cells lead to long computation times.
+
+### Parallel implementation
+
+Check how many cores you have on your computer by typing in the terminal:
+
+    cat /proc/cpuinfo | grep processor | wc -l
+
+We can speed up the computation of the energy grid by assigning each core on your computer a sheet of the energy grid to compute in parallel. To do this, start up Julia by telling it how many additional cores you want to utilize. For example, if you have 8 cores, start Julia in the termial using:
+    
+    julia -p 7
+
+Then the following two lines of code will compute the energy grid in parallel:
+
+    include("src/parallelenergygrid.jl")
+    parallel_writegrid("CH4", "IRMOF-1", "UFF", gridspacing=1.0, cutoff=12.5)
+
+You should observe a significant speed up in comparison to the serial implementation.
 
 ## How to visualize potential energy contours with the grid
 
@@ -104,3 +127,5 @@ e.g., to compute the potential energy of adsorbate `CH4` in crystal structure `I
 This will return the energy of the adsorbate at that fractional coordinate (units: Kelvin).
 
 - [ ] include function to convert from Cartesian to fractional for this function
+
+Cheers to Watson Research Scientist [Richard Luis Martin](https://www.linkedin.com/in/richardluismartin) for generally teaching me to store the grid and make these visualizations.
