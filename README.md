@@ -5,7 +5,7 @@ This code, written in Julia, is for visualizing the potential energy contours of
 
 With this .cube energy grid file, we can visualize the potential energy contours of the adsorbate inside the pores of the crystal as in the figure below.
 
-<a href="url"><img src="https://www.dropbox.com/s/uzw1ry8ap9jguup/cover.jpeg?dl=1" align="middle" height="500" width="500" ></a>
+<a href="url"><img src="https://www.dropbox.com/s/uzw1ry8ap9jguup/cover.jpeg?dl=1" align="middle" height="500" width="370" ></a>
 
 ## Necessary data
 
@@ -127,3 +127,5 @@ e.g., to compute the potential energy of adsorbate `CH4` in crystal structure `I
 This will return the energy of the adsorbate at that fractional coordinate (units: Kelvin).
 
 - [ ] include function to convert from Cartesian to fractional for this function
+
+Cheers to Watson Research Scientist [Richard Luis Martin](https://www.linkedin.com/in/richardluismartin) for generally teaching me to store the grid and make these visualizations.
