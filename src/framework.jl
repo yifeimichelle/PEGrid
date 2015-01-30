@@ -40,11 +40,12 @@ type Framework
     f_to_cartesian_mtrx::Array{Float64}
 end
 
-function constructframework(structurename::String)
+function constructframework(structurename::String; check_coords=true)
     """
     Construct and fill in information on Framework type from a .cssr crystal structure file
 
     :param String structurename: name of structure. Will try to import file structurename.cssr
+    :param Bool check_coords: check that fractional coords are in [0.,1]
     """
     # construct the framework object
     framework = Framework()
@@ -102,6 +103,12 @@ function constructframework(structurename::String)
         framework.xf[a] = float(line[3]) % 1.0 # wrap to [0,1]
         framework.yf[a] = float(line[4]) % 1.0
         framework.zf[a] = float(line[5]) % 1.0
+        
+        if check_coords # assert fractional coords in [0,1]
+            @assert ((framework.xf[a] >= 0.0) & (framework.xf[a] <= 1.0)) "Fraction coords not in [0,1]!\n"
+            @assert ((framework.yf[a] >= 0.0) & (framework.yf[a] <= 1.0)) "Fraction coords not in [0,1]!\n"
+            @assert ((framework.zf[a] >= 0.0) & (framework.zf[a] <= 1.0)) "Fraction coords not in [0,1]!\n"
+        end
     end
     
     close(f) # close file
@@ -129,23 +136,23 @@ function crystaldensity(framework::Framework)
     return mass / framework.v_unitcell * 1660.53892  # --> kg/m3
 end
 
-function replicate_cssr_to_xyz(frameworkname::String; rep_factor::Int=1)
+function replicate_cssr_to_xyz(frameworkname::String; rep_factors::Array{Int}=[1, 1, 1])
     """
     Converts a .cssr crystal structure file to .xyz
     Replicates unit cell into rep_factor by rep_factor by rep_factor supercell.
     The primitive unit cell will be in the middle.
 
     :param String frameworkname: name of crystal structure
-    :param Int rep_factor: number of times to replicate unit cell
+    :param Array{Float64} rep_factors: number of times to replicate unit cell
     """
     framework = constructframework(frameworkname)
     xyz_file = open(framework.structurename * ".xyz", "w")
-    @printf(xyz_file, "%d\n\n", framework.natoms * (2 * rep_factor + 1)^3)
+    @printf(xyz_file, "%d\n\n", framework.natoms * (2*rep_factors[1]+1)*(2*rep_factors[2]+1)*(2*rep_factors[3]+1))
 
     for a = 1:framework.natoms
-        for rep_x = -rep_factor:rep_factor
-            for rep_y = -rep_factor:rep_factor
-                for rep_z = -rep_factor:rep_factor
+        for rep_x = -rep_factors[1]:rep_factors[1]
+            for rep_y = -rep_factors[2]:rep_factors[2]
+                for rep_z = -rep_factors[3]:rep_factors[3]
                     x_f = [framework.xf[a] + 1.0*rep_x,
                            framework.yf[a] + 1.0*rep_y,
                            framework.zf[a] + 1.0*rep_z]
@@ -156,6 +163,7 @@ function replicate_cssr_to_xyz(frameworkname::String; rep_factor::Int=1)
         end
     end
     close(xyz_file)
+    @printf("Wrote file %s\n", framework.structurename * ".xyz")
 end
 
 function write_unitcell_boundary_vtk(frameworkname::String)
@@ -182,5 +190,65 @@ function write_unitcell_boundary_vtk(frameworkname::String)
     # define connections
     @printf(vtk_file, "LINES 12 36\n2 0 1\n2 0 2\n2 1 3\n2 2 3\n2 4 5\n2 4 6\n2 5 7\n2 6 7\n2 0 4\n2 1 5\n2 2 6\n2 3 7\n")
     close(vtk_file)
+    @printf("Wrote file %s\n", framework.structurename * ".vtk")
 end
 
+function shift_unitcell_in_cssr(frameworkname::String; shift::Array{Float64}=[0.5, 0.5, 0.5])
+    """
+    Shift the unit cell.
+
+    :param String frameworkname: name of crystal structure
+    """
+    @assert sum((shift .< 1.0) & (shift .>=0 )) == 3
+    framework = constructframework(frameworkname)
+    new_cssr_file = open("data/structures/" * framework.structurename * "_shifted.cssr", "w")
+    @printf(new_cssr_file, "%f %f %f\n%f %f %f\n%d 0\nshifted by PEGrid\n", 
+        framework.a, framework.b, framework.c,
+        framework.alpha*180.0/pi, framework.beta*180.0/pi, framework.gamma*180.0/pi,
+        framework.natoms)
+    
+    count = 1 
+    for a = 1:framework.natoms
+        # consider the unit cells to the "left" that are now part of this UC
+        for rep_x = -1:0
+            for rep_y = -1:0
+                for rep_z = -1:0
+                    # fractional coordinate
+                    x_f = [framework.xf[a] + 1.0*rep_x + shift[1],
+                           framework.yf[a] + 1.0*rep_y + shift[2],
+                           framework.zf[a] + 1.0*rep_z + shift[3]]
+                    if sum((x_f .< 1.0) & (x_f .>= 0.0)) == 3
+                        @printf(new_cssr_file, "%d %s %f %f %f\n", 
+                            count, framework.atoms[a], 
+                            x_f[1], x_f[2], x_f[3])
+                        count += 1
+                    end
+                end
+            end
+        end
+    end
+    close(new_cssr_file)
+    @printf("Wrote file data/structures/%s\n", framework.structurename * "_shifted.cssr")
+end
+
+function put_cssr_coords_in_0_1(frameworkname::String)
+    """
+    In an incorrect .cssr, reflect coords to [0,1]
+    """
+    framework = constructframework(frameworkname, check_coords=false)
+    new_cssr_file = open("data/structures/" * framework.structurename * "_corrected.cssr", "w")
+    @printf(new_cssr_file, "%f %f %f\n%f %f %f\n%d 0\ncorrected by PEviz\n", 
+        framework.a, framework.b, framework.c,
+        framework.alpha*180.0/pi, framework.beta*180.0/pi, framework.gamma*180.0/pi,
+        framework.natoms)
+    
+    count = 1 
+    for a = 1:framework.natoms
+        @printf(new_cssr_file, "%d %s %f %f %f\n", 
+            count, framework.atoms[a], 
+            mod(framework.xf[a], 1.0), mod(framework.yf[a], 1.0),mod(framework.zf[a], 1.0))
+        count += 1
+    end
+    close(new_cssr_file)
+    @printf("Wrote correct file with coords in [0,1] in data/structures/%s\n", framework.structurename * "_corrected.cssr")
+end
