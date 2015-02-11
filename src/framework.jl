@@ -74,6 +74,7 @@ function constructframework(structurename::String)
             2 * cos(framework.alpha) * cos(framework.beta) * cos(framework.gamma)) # volume of unit parallelpiped
     framework.v_unitcell = v_unit_piped * framework.a * framework.b * framework.c  # volume of unit cell
     framework.f_to_cartesian_mtrx = Array(Float64, (3,3))
+    framework.cartesian_to_f_mtrx = Array(Float64, (3,3))
 
 
     framework.f_to_cartesian_mtrx[1,1] = framework.a
@@ -86,15 +87,15 @@ function constructframework(structurename::String)
     framework.f_to_cartesian_mtrx[3,2] = 0.0
     framework.f_to_cartesian_mtrx[3,3] = framework.c * v_unit_piped / sin(framework.gamma)
 
-    framework.cartesian_to_f_mtrx[0,0] = 1.0 / framework.a;
-    framework.cartesian_to_f_mtrx[0,1] = - cos(framework.gamma) / framework.a / sin(framework.gamma);
-    framework.cartesian_to_f_mtrx[0,2] = (cos(framework.alpha) * cos(framework.gamma) - cos(framework.beta)) / (framework.a * v_unit_piped * sin(framework.gamma));
-    framework.cartesian_to_f_mtrx[1,0] = 0.0;
-    framework.cartesian_to_f_mtrx[1,1] = 1.0 / framework.b / sin(framework.gamma);
-    framework.cartesian_to_f_mtrx[1,2] = (cos(framework.beta) * cos(framework.gamma) - cos(framework.alpha)) / (framework.b * v_unit_piped * sin(framework.gamma));
-    framework.cartesian_to_f_mtrx[2,0] = 0.0;
+    framework.cartesian_to_f_mtrx[1,1] = 1.0 / framework.a;
+    framework.cartesian_to_f_mtrx[1,2] = - cos(framework.gamma) / framework.a / sin(framework.gamma);
+    framework.cartesian_to_f_mtrx[1,3] = (cos(framework.alpha) * cos(framework.gamma) - cos(framework.beta)) / (framework.a * v_unit_piped * sin(framework.gamma));
     framework.cartesian_to_f_mtrx[2,1] = 0.0;
-    framework.cartesian_to_f_mtrx[2,2] = sin(framework.gamma) / (framework.c * v_unit_piped);
+    framework.cartesian_to_f_mtrx[2,2] = 1.0 / framework.b / sin(framework.gamma);
+    framework.cartesian_to_f_mtrx[2,3] = (cos(framework.beta) * cos(framework.gamma) - cos(framework.alpha)) / (framework.b * v_unit_piped * sin(framework.gamma));
+    framework.cartesian_to_f_mtrx[3,1] = 0.0;
+    framework.cartesian_to_f_mtrx[3,2] = 0.0;
+    framework.cartesian_to_f_mtrx[3,3] = sin(framework.gamma) / (framework.c * v_unit_piped);
 
     
     # get atom count, initialize arrays holding coords
