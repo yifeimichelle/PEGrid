@@ -6,7 +6,10 @@ include("framework.jl")
 
 function writeprobabilitydistncube(structurename::String, which_adsorbate::String, binspacing=1)
     """
-    Takes an xyz file and creates a .cube file of the probability of finding a particle in that voxel
+    Takes an xyz file of adsorbate positions in the framework,
+    bins these positions in 3D space
+    outputs a Gaussian cube file of the probability of finding a particle in that voxel
+    For make volume plots to visualize where molecules adsorb in the material
     """
     ### load framework info
     framework = constructframework(structurename)
