@@ -84,6 +84,22 @@ Use VisIt visualization tool.
 
 ## Other features
 
+#### Estimate 3D probability density function of adsorbate positions in a material
+
+Say we have a .xyz file of positions of adsorbate molecules in the material from a Grand-canonical Monte Carlo simulation. Plotting the adsorbates as points is not very informative, since it is difficult to see the density of points-- especially as the number of snapshots gets large, which gives better statistical quality. PEGrid can partition the space of the unit cell into voxels and count the number of adsorbates that fall in each voxel. PEGrid stores this normalized probability density estimation in a Gaussian cube file to visualize as a cloud with a volume plot. e.g. VisIt can make volume plots.
+
+Put your .xyz file of adsorbate positions in the main directory, named `adsorbate_positions_$structurename.xyz`.
+
+If we want to visualize the density of `Kr` adsorbates in the material `IRMOF-1`, we use the following Julia code:
+
+    include("src/positiondistn.jl")
+
+    writeprobabilitydistncube("IRMOF-1", "Kr", 0.5)
+
+The last argument gives the aim of widths in A for each bin along the a, b, and c axes of the crystal.
+
+This will write a .cube file of the adsorbate probability density in `$home/PEGrid_ouptut/$structurename_adsorbate_probability_distn.cube`.
+
 #### Replicating a .cssr to an .xyz file
 
 An .xyz file contains a list of atoms in the crystal structure file, their identities, and their positions in Cartesian coordinates. An .xyz file is useful for visualizing the atoms of the crystal structure. PEGrid can replicate the unit cell of the crystal in each direction, so that the 'home' unit cell is in the center, and output a .xyz of the replicated crystal structure file.
