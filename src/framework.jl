@@ -38,6 +38,7 @@ type Framework
 
     # transformation matrix from fractional to cartesian
     f_to_cartesian_mtrx::Array{Float64}
+    cartesian_to_f_mtrx::Array{Float64}
 end
 
 function constructframework(structurename::String)
@@ -69,9 +70,9 @@ function constructframework(structurename::String)
     framework.gamma = float(line[3]) * pi / 180.0
 
     # write transformation matrix from fractional to cartesian coords
-    v_unit = sqrt(1.0 - cos(framework.alpha)^2 - cos(framework.beta)^2 - cos(framework.gamma)^2 +
+    v_unit_piped = sqrt(1.0 - cos(framework.alpha)^2 - cos(framework.beta)^2 - cos(framework.gamma)^2 +
             2 * cos(framework.alpha) * cos(framework.beta) * cos(framework.gamma)) # volume of unit parallelpiped
-    framework.v_unitcell = v_unit * framework.a * framework.b * framework.c  # volume of unit cell
+    framework.v_unitcell = v_unit_piped * framework.a * framework.b * framework.c  # volume of unit cell
     framework.f_to_cartesian_mtrx = Array(Float64, (3,3))
 
 
@@ -83,7 +84,18 @@ function constructframework(structurename::String)
     framework.f_to_cartesian_mtrx[2,3] = framework.c * (cos(framework.alpha) - cos(framework.beta) * cos(framework.gamma)) / sin(framework.gamma)
     framework.f_to_cartesian_mtrx[3,1] = 0.0
     framework.f_to_cartesian_mtrx[3,2] = 0.0
-    framework.f_to_cartesian_mtrx[3,3] = framework.c * v_unit / sin(framework.gamma)
+    framework.f_to_cartesian_mtrx[3,3] = framework.c * v_unit_piped / sin(framework.gamma)
+
+    framework.cartesian_to_f_mtrx[0,0] = 1.0 / framework.a;
+    framework.cartesian_to_f_mtrx[0,1] = - cos(framework.gamma) / framework.a / sin(framework.gamma);
+    framework.cartesian_to_f_mtrx[0,2] = (cos(framework.alpha) * cos(framework.gamma) - cos(framework.beta)) / (framework.a * v_unit_piped * sin(framework.gamma));
+    framework.cartesian_to_f_mtrx[1,0] = 0.0;
+    framework.cartesian_to_f_mtrx[1,1] = 1.0 / framework.b / sin(framework.gamma);
+    framework.cartesian_to_f_mtrx[1,2] = (cos(framework.beta) * cos(framework.gamma) - cos(framework.alpha)) / (framework.b * v_unit_piped * sin(framework.gamma));
+    framework.cartesian_to_f_mtrx[2,0] = 0.0;
+    framework.cartesian_to_f_mtrx[2,1] = 0.0;
+    framework.cartesian_to_f_mtrx[2,2] = sin(framework.gamma) / (framework.c * v_unit_piped);
+
     
     # get atom count, initialize arrays holding coords
     framework.natoms = int(split(readline(f))[1])
@@ -166,7 +178,10 @@ function write_unitcell_boundary_vtk(frameworkname::String)
     Write unit cell boundary as a .vtk file for visualizing the unit cell.
     """
     framework = constructframework(frameworkname)
-    vtk_file = open(framework.structurename * ".vtk", "w")
+    if ! isdir(homedir() * "/PEGrid_output")
+       mkdir(homedir() * "/PEGrid_output") 
+    end
+    vtk_file = open(homedir() * "/PEGrid_output/" * framework.structurename * ".vtk", "w")
     
     # write first lines
     @printf(vtk_file, "# vtk DataFile Version 2.0\nunit cell boundary\nASCII\nDATASET POLYDATA\nPOINTS 8 double\n") 
