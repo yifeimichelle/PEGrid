@@ -76,10 +76,10 @@ function writeprobabilitydistncube(structurename::String, which_adsorbate::Strin
             end
 
             if (i < 1)  |  (j < 1) | (k < 1)
-                println("shit i>0");
+                error("adsorbate outside of unit cell")
             end
             if (i > N_x)  |  (j > N_y ) | (k > N_z)
-                println("shit i > N_x");
+                error("adsorbate outside of unit cell")
             end
             
             # update counts
