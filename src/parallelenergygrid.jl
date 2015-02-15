@@ -9,7 +9,7 @@ function evaluate_expressions_on_all_cores(;kwargs...)
     end
 end
 
-function parallel_writegrid(adsorbate::String, structurename::String, forcefieldname::String; gridspacing=0.1, gridfilename=None, cutoff=12.5)
+function parallel_writegrid(adsorbate::String, structurename::String, forcefieldname::String; gridspacing=0.1, cutoff=12.5)
     """
     Compute the potential energy of an adsorbate molecule on a 3D grid of points superimposed on the unit cell of the structure.
     Parallelized across cores.

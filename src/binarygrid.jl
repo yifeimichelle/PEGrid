@@ -65,10 +65,10 @@ function writebinarygrid(adsorbate::String, structurename::String, forcefieldnam
 
     @assert(fractionalgridspacing < 1.0)
     
-	# how many grid points in each direction? 
-	N_x = int(1.0 / fractionalgridspacing) + 1
-	N_y = int(1.0 / fractionalgridspacing) + 1
-	N_z = int(1.0 / fractionalgridspacing) + 1
+    # how many grid points in each direction? 
+    N_x = int(1.0 / fractionalgridspacing) + 1
+    N_y = int(1.0 / fractionalgridspacing) + 1
+    N_z = int(1.0 / fractionalgridspacing) + 1
     @printf("Grid is %d by %d by %d points, a total of %d grid points.\n", N_x, N_y, N_z, N_x*N_y*N_z)
     # fractional grid point spacing. Think of grid points as center of voxels.
     dx_f = 1.0 / (N_x - 1)
@@ -76,10 +76,10 @@ function writebinarygrid(adsorbate::String, structurename::String, forcefieldnam
     dz_f = 1.0 / (N_z - 1)
     @printf("Fractional grid spacing: dx_f = %f, dy_f = %f, dz_f = %f\n", dx_f, dy_f, dz_f)
 
-	# get fractional coords of energy grid. 
-	xf_grid = linspace(0.0, 1.0, N_x)
-	yf_grid = linspace(0.0, 1.0, N_y)
-	zf_grid = linspace(0.0, 1.0, N_z)
+    # get fractional coords of energy grid. 
+    xf_grid = linspace(0.0, 1.0, N_x)
+    yf_grid = linspace(0.0, 1.0, N_y)
+    zf_grid = linspace(0.0, 1.0, N_z)
     
     # get grid point spacing in Cartesian space, just for kicks ^.^
     cartesian_spacing = framework.f_to_cartesian_mtrx * [xf_grid[2]-xf_grid[1], yf_grid[2]-yf_grid[1], zf_grid[2]-zf_grid[1]]
@@ -87,7 +87,7 @@ function writebinarygrid(adsorbate::String, structurename::String, forcefieldnam
 
     # get array of framework atom positions and corresponding epsilons and sigmas for speed
     pos_array, epsilons, sigmas = _generate_pos_array_epsilons_sigmas(framework, forcefield)
-	
+    
     # open grid file
     if ! isdir(homedir() * "/PEGrid_output")
        mkdir(homedir() * "/PEGrid_output") 
@@ -103,15 +103,15 @@ function writebinarygrid(adsorbate::String, structurename::String, forcefieldnam
     @printf(gridfile, "%d %f %f %f\n" , N_z, framework.f_to_cartesian_mtrx[1,3] / (N_z - 1), framework.f_to_cartesian_mtrx[2,3] / (N_z - 1), framework.f_to_cartesian_mtrx[3,3] / (N_z - 1))
 
     @printf("Writing grid...\n")
-	# loop over [fractional] grid points, compute energies
-	for i in 1:N_x  # loop over x_f-grid points
+    # loop over [fractional] grid points, compute energies
+    for i in 1:N_x  # loop over x_f-grid points
         # print progress
         if i % (int(N_x/10.0)) == 0
             @printf("\tPercent finished: %.1f\n", 100.0*i/N_x)
         end
 
-		for j in 1:N_y  # loop over y_f-grid points
-			for k in 1:N_z  # loop over z_f-grid points
+        for j in 1:N_y  # loop over y_f-grid points
+            for k in 1:N_z  # loop over z_f-grid points
 
                 accessibility = _accessible_at_pt!(xf_grid[i], yf_grid[j], zf_grid[k], 
                                     pos_array, 
@@ -124,10 +124,10 @@ function writebinarygrid(adsorbate::String, structurename::String, forcefieldnam
                     @printf(gridfile, "\n")
                 end
 
-			end # end loop in z_f-grid points
+            end # end loop in z_f-grid points
             @printf(gridfile, "\n")
-		end # end loop in y_f-grid points
-	end # end loop in x_f-grid points
+        end # end loop in y_f-grid points
+    end # end loop in x_f-grid points
     close(gridfile)
     @printf("\tDone.\n")
 end

@@ -15,10 +15,10 @@ function writeprobabilitydistncube(structurename::String, which_adsorbate::Strin
     framework = constructframework(structurename)
 
     ### Partition unit cell into voxels
-	# how many points in each direction? 
-	N_x = int(framework.a / binspacing) + 1
-	N_y = int(framework.b / binspacing) + 1
-	N_z = int(framework.c / binspacing) + 1
+    # how many points in each direction? 
+    N_x = int(framework.a / binspacing) + 1
+    N_y = int(framework.b / binspacing) + 1
+    N_z = int(framework.c / binspacing) + 1
     @printf("Position disnt is %d by %d by %d points, a total of %d points.\n", N_x, N_y, N_z, N_x*N_y*N_z)
 
     # spacing in fractional coords
@@ -109,9 +109,9 @@ function writeprobabilitydistncube(structurename::String, which_adsorbate::Strin
     @printf(probdistn, "%d %f %f %f\n" , N_z, framework.f_to_cartesian_mtrx[1,3] / (N_z - 1), framework.f_to_cartesian_mtrx[2,3] / (N_z - 1), framework.f_to_cartesian_mtrx[3,3] / (N_z - 1))
 
     @printf("Writing adsorbate probability distn to cube file:\n\t%s\n\t... ... ...\n", homedir() * "/PEGrid_output/" * framework.structurename * "_adsorbate_probability_distn" * ".cube")
-	for i in 1:N_x  # loop over x_f-grid points
-		for j in 1:N_y  # loop over y_f-grid points
-			for k in 1:N_z  # loop over z_f-grid points
+    for i in 1:N_x  # loop over x_f-grid points
+        for j in 1:N_y  # loop over y_f-grid points
+            for k in 1:N_z  # loop over z_f-grid points
 
                 # write probability at this point to grid file
                 @printf(probdistn, "%e ", counts[i, j, k])
@@ -119,10 +119,10 @@ function writeprobabilitydistncube(structurename::String, which_adsorbate::Strin
                     @printf(probdistn, "\n")
                 end
 
-			end # end loop in z_f-grid points
+            end # end loop in z_f-grid points
             @printf(probdistn, "\n")
-		end # end loop in y_f-grid points
-	end # end loop in x_f-grid points
+        end # end loop in y_f-grid points
+    end # end loop in x_f-grid points
     close(probdistn)
     @printf("\tDone.\n")
     
