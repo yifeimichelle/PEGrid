@@ -43,6 +43,8 @@ In order to calculate the crystal density of the framework, PEGrid stores the at
 
 ## How to write the grid
 
+Start up Julia by typing `julia` into the terminal.
+
 PEGrid computes the potential energy grid in both a serial implementation as well as a parallel implementation that fully utilizes the cores on your computer (much faster! [Blog post](http://mathemathinking.com/uncategorized/parallel-monte-carlo-in-julia/)).
 
 As an example, say we want to use the `UFF` forcefield to compute the energy of adsorbate molecule `CH4` (modeled as a Lennard-Jones sphere) in crystal structure `IRMOF-1` using a Lennard-Jones cutoff of 12.5 Angstrom on a 3D grid of points with a spacing of 1.0 Angstrom.
@@ -57,7 +59,7 @@ The following two lines of code in Julia will write a .cube grid file (units: kJ
 * `CH4`: corresponds to an atom listed in data/forcefields/UFF.csv
 * `IRMOF-1`: corresponds to crystal structure file data/structures/IRMOF-1.cssr
 
-I recommend using the IJulia notebook. The code will print off the progress of the grid writing every 10%. Be patient, as computing fine grids and/or large unit cells lead to long computation times.
+The code will print off the progress of the grid writing every 10%. Be patient, as computing fine grids and/or large unit cells lead to long computation times.
 
 ### Parallel implementation
 
