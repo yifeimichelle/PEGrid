@@ -10,7 +10,7 @@ function _accessible_at_pt!(x_f::Float64, y_f::Float64, z_f::Float64,
             pos_array::Array{Float64}, sigmas::Array{Float64},
             framework::Framework)
     """
-    Accessible at fractional coordinate (x_f, y_f, z_f) based on hard-sphere model?
+    Determine if point at fractional coordinate (x_f, y_f, z_f) is accessible based on hard-sphere model?
     returns 1 if accessible
     returns 0 if inaccessible
     """
@@ -48,9 +48,9 @@ function _accessible_at_pt!(x_f::Float64, y_f::Float64, z_f::Float64,
     return 1  
 end
 
-function writebinarygrid(adsorbate::String, structurename::String, forcefieldname::String; fractionalgridspacing=0.1)
+function WriteBinaryGrid(adsorbate::String, structurename::String, forcefieldname::String; fractionalgridspacing=0.1)
     """
-    Write a binary grid (0 or 1) for occupiable or not, based on hard-sphere model of atoms.
+    Write a binary grid for occupiable (1) or not (0), based on hard-sphere model of atoms.
     Radii of atoms are taken from the force field.
 
     The grid is written to a file `structurename_binary.cube`, in Gaussian cube format. 
@@ -106,8 +106,10 @@ function writebinarygrid(adsorbate::String, structurename::String, forcefieldnam
     # loop over [fractional] grid points, compute energies
     for i in 1:N_x  # loop over x_f-grid points
         # print progress
-        if i % (int(N_x/10.0)) == 0
-            @printf("\tPercent finished: %.1f\n", 100.0*i/N_x)
+        if N_x > 11
+            if (i % int(N_x / 10)) == 0
+                @printf("\tPercent finished: %.1f\n", 100.0*i/N_x)
+            end
         end
 
         for j in 1:N_y  # loop over y_f-grid points
@@ -119,7 +121,7 @@ function writebinarygrid(adsorbate::String, structurename::String, forcefieldnam
                                     framework)
                 
                 # write accessibility of this point to grid file
-                @printf(gridfile, "%e ", accessibility)
+                @printf(gridfile, "%d ", accessibility)
                 if (k % 6) == 0
                     @printf(gridfile, "\n")
                 end
@@ -130,4 +132,88 @@ function writebinarygrid(adsorbate::String, structurename::String, forcefieldnam
     end # end loop in x_f-grid points
     close(gridfile)
     @printf("\tDone.\n")
+end
+
+function ReadBinaryGrid(adsorbate::String, structurename::String; lengthcheck=None)
+    """
+    Reads binary grid .cube file into Julia and returns a 1D array
+
+    Does not count endpoints
+
+    :int lengthcheck: check length of resulting vector, optional
+    """
+    gridfilename = homedir() * "/PEGrid_output/" * structurename * "_" * adsorbate * "_binary.cube"
+    if ~ isfile(gridfilename)
+        @printf("Binary grid file %s does not exist.\n", gridfilename)
+    end
+    gridfile = open(homedir() * "/PEGrid_output/" * structurename * "_" * adsorbate * "_binary.cube")
+
+    # Waste first 3 lines
+    readline(gridfile)
+    readline(gridfile)
+    readline(gridfile)
+
+    # next 3 lines give number of points
+    N_x = int(split(readline(gridfile))[1])
+    N_y = int(split(readline(gridfile))[1])
+    N_z = int(split(readline(gridfile))[1])
+
+    @assert((N_x >= 2) & (N_y >= 2) & (N_z >= 2)) # otherwise no points in cube!
+
+    N = N_x*N_y*N_z - N_x*N_y - N_z*(N_y-1) - (N_z-1)*(N_x-1) # total length of vector. Do not count edges
+    if lengthcheck != None
+        @assert(N == lengthcheck)
+    end
+    @printf("N = %d\n", N)
+
+    # TODO: do not double count edges. Hm.
+    feature = -1 * ones(Int, N) # will be -1 if somehow missed it.
+    count = 0
+    line = readline(gridfile)
+    # loop over [fractional] grid points, compute energies
+    for i in 1:N_x  # loop over x_f-grid points
+        for j in 1:N_y  # loop over y_f-grid points
+            for k in 1:N_z  # loop over z_f-grid points
+                
+ #                 @printf("i j k = %d %d %d\n", i, j, k)
+ #                 @printf("calling entry %d\n", 1+mod(k-1,6))
+ #                 print(line)
+ #                 @printf("feature = %d\n ", int(split(line)[1 + mod(k - 1, 6)]))
+ #                 @printf("count = %d\n", count)
+ #                 @printf("\n")
+                
+                # do not double-count faces of unit cell
+                if ((i != N_x) & (j != N_y) & (k != N_z))
+                    count = count + 1
+                    feature[count] = int(split(line)[1 + mod(k-1, 6)])
+                end
+                
+                if (k % 6) == 0
+                    line = readline(gridfile)
+                end
+
+            end # end loop in z_f-grid points
+            line = readline(gridfile)
+        end # end loop in y_f-grid points
+    end # end loop in x_f-grid points
+
+    @assert(count == N)
+    close(gridfile)
+    return feature
+end
+
+function JaccardSimilarity(x1, x2)
+    """
+    Computes Jaccard similarity between two feature vectors x1 and x2
+    """
+    n_both1 = sum((x1 + x2) .== 2)
+    n_either = sum((x1 + x2) .>= 1)
+    return 1.0 * n_both1 / n_either
+end
+
+function FractionMatch(x1, x2)
+    """
+    Computes Jaccard similarity between two feature vectors x1 and x2
+    """
+    return sum(x1 .== x2) / length(x2)
 end
