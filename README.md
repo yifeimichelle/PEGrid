@@ -5,7 +5,7 @@ This code, written in Julia, is for visualizing the potential energy contours of
 
 With this .cube energy grid file, we can visualize the potential energy contours of the adsorbate inside the pores of the crystal as in the figure below.
 
-<a href="url"><img src="https://www.dropbox.com/s/uzw1ry8ap9jguup/cover.jpeg?dl=1" align="middle" height="500" width="675" ></a>
+<a href="url"><img src="https://www.dropbox.com/s/d204zybfcqx2g6i/cover.jpeg?dl=1" align="middle" height="500" width="675" ></a>
 
 ## Necessary data
 
@@ -25,13 +25,13 @@ Place the .cssr crystal structure files in `data/structures`.
 
 The force field is the model and parameters used to describe the potential energy of the adsorbate molecule with the atoms of the crystal structure. PEGrid models the interaction between the adsorbate *a* and crystal structure atom type *i* a distance *r* apart with the Lennard-Jones potential:
 
-<a href="url"><img src="https://www.dropbox.com/s/zfn2titfiyp8w6j/LJpotential.png?dl=1" align="middle" height="60" ></a>
+<a href="url"><img src="" align="middle" height="60" ></a>
 
 Currently, only adsorbates modeled as a Lennard-Jones sphere are supported; electrostatic charges and more complex molecules are not yet supported.
 
 The Lennard-Jones parameters for the cross-interaction between adsorbate *a* and atom type *i* are computed from the pure *a-a*, *i-i* interactions using the following Lorenz-Berthelot mixing rules:
 
-<a href="url"><img src="https://www.dropbox.com/s/hlod22zvhgejc8r/mixingrules.png?dl=1" align="middle" height="100" ></a>
+<a href="url"><img src="mixingrules.png" align="middle" height="100" ></a>
 
 The pure *i-i* and *a-a* Lennard-Jones interaction parameters must be stored in `data/forcefields/${yourforcefield}.csv`.
 
