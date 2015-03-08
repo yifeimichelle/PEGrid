@@ -147,10 +147,10 @@ function E_vdw_at_point(structurename::String, forcefieldname::String, adsorbate
     Use internal function _E_vdw_at_point!(...) for writing energy grids.
     """
     @printf("Constructing framework object for %s...\n", structurename)
-    framework = constructframework(structurename)
+    framework = Framework(structurename)
 
     @printf("Constructing forcefield object for %s...\n", forcefieldname)
-    forcefield = constructforcefield(forcefieldname, adsorbate, cutoff=cutoff)
+    forcefield = Forcefield(forcefieldname, adsorbate, cutoff=cutoff)
     
     # get unit cell replication factors for periodic BCs
     rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
