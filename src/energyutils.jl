@@ -139,12 +139,16 @@ function _generate_pos_array_epsilons_sigmas(framework::Framework, forcefield::F
     return  pos_array, epsilons, sigmas
 end
 
-function E_vdw_at_point(structurename::String, forcefieldname::String, adsorbate::String, 
-                        x_f::Float64, y_f::Float64, z_f::Float64; cutoff::Float64=12.5)
+function E_vdw_at_points(structurename::String, forcefieldname::String, adsorbate::String, 
+                        x_f::Union(Float64, Array{Float64}), 
+                        y_f::Union(Float64, Array{Float64}), 
+                        z_f::Union(Float64, Array{Float64}); 
+                        cutoff::Float64=12.5)
     """
-    Compute energy at fractional grid point (x_f, y_f, z_f) of adsorbate inside framework.
-    This is for a casual use, as it is not efficient for multiple calls.
-    Use internal function _E_vdw_at_point!(...) for writing energy grids.
+    Compute energy at fractional grid points (x_f, y_f, z_f) of adsorbate inside framework.
+    Use internal function _E_vdw_at_point!(...) that is used for writing energy grids.
+
+    :returns Array{Float64} of potential energies at each point in Kelvin (well, same units as \epsilon given in forcefield)
     """
     @printf("Constructing framework object for %s...\n", structurename)
     framework = Framework(structurename)
@@ -154,12 +158,24 @@ function E_vdw_at_point(structurename::String, forcefieldname::String, adsorbate
     
     # get unit cell replication factors for periodic BCs
     rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
+    @printf("\tUnit cell replication factors for cutoff radius %f A: %d x %d x %d\n", cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
     
     # get position array and epsilons/sigmas for easy computation
     pos_array, epsilons, sigmas = _generate_pos_array_epsilons_sigmas(framework, forcefield)
 
-    return _E_vdw_at_point!(x_f, y_f, z_f,
-            pos_array, epsilons, sigmas, 
-            framework,
-            rep_factors, cutoff)
+    npoints = length(x_f)
+    @assert length(y_f) == npoints
+    @assert length(z_f) == npoints
+    @printf("\tComputing potential energy at %d points\n", npoints)
+
+    E = zeros(npoints)  # pre-allocate array of energies
+
+    for i = 1:npoints
+        E[i] = _E_vdw_at_point!(x_f[i], y_f[i], z_f[i],
+                pos_array, epsilons, sigmas, 
+                framework,
+                rep_factors, cutoff)
+    end
+    
+    return E  # in (Kelvin)
 end

@@ -140,12 +140,18 @@ The .vtk mesh file allows us to visualize the boundaries of the unit cell. To ge
 
 The .vtk file `${yourstructurename}.vtk` will be written in the working directory (just above the `data` directory).
 
-#### Computing the potential energy of an adsorbate at a particular point
+#### Computing the potential energy of an adsorbate at an array of [fractional] points
 
-e.g., to compute the potential energy of adsorbate `CH4` in crystal structure `IRMOF-1` using Lennard-Jones parameters in `data/forcefield/UFF.csv` with a cutoff radius of 12.5 at the *fractional* coordinate `(x_f, y_f, z_f)`, use the Julia code:
+e.g., to compute the potential energy of adsorbate `CH4` in crystal structure `IRMOF-1` using Lennard-Jones parameters in `data/forcefield/UFF.csv` with a cutoff radius of 12.5 at the *fractional* coordinates `(x_f, y_f, z_f)`, (`x_f`, `y_f`, and `z_f` can be Array{Float64}'s), use the Julia code:
 
     include("src/energyutils.jl")
-    E = E_vdw_at_point("IRMOF-1", "UFF", "CH4", x_f, y_f, z_f, cutoff=12.5)
+
+    # array of fractional grid points at which we seek the potential energies
+    x_f = linspace(0, 1)
+    y_f = linspace(0, 1)
+    z_f = linspace(0, 1)
+
+    E = E_vdw_at_point("IRMOF-1", "UFF", "CH4", x_f, y_f, z_f, cutoff=12.5)  # returns array of energies corresponding to these points
 
 This will return the energy of the adsorbate at that fractional coordinate (units: Kelvin).
 
