@@ -40,11 +40,11 @@ function parallel_writegrid(adsorbate::String, structurename::String, forcefield
    
     # load the framework on all cores
     @printf("Constructing framework object on all cores for %s...\n", structurename)
-    @everywhere framework = constructframework(structurename)
+    @everywhere framework = Framework(structurename)
 
     # load the forcefield on all cores
     @printf("Constructing forcefield object on all cores for %s...\n", forcefieldname)
-    @everywhere forcefield = constructforcefield(forcefieldname, adsorbate, cutoff=cutoff)
+    @everywhere forcefield = Forcefield(forcefieldname, adsorbate, cutoff=cutoff)
 
     # get unit cell replication factors for periodic BCs on all cores
     @everywhere rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)

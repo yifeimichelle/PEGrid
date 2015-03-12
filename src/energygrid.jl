@@ -15,10 +15,10 @@ function writegrid(adsorbate::String, structurename::String, forcefieldname::Str
     :param: String adsorbate: the name of the adsorbate molecule, corresponding to the forcefield file
     """
     @printf("Constructing framework object for %s...\n", structurename)
-    framework = constructframework(structurename)
+    framework = Framework(structurename)
 
     @printf("Constructing forcefield object for %s...\n", forcefieldname)
-    forcefield = constructforcefield(forcefieldname, adsorbate, cutoff=cutoff)
+    forcefield = Forcefield(forcefieldname, adsorbate, cutoff=cutoff)
     
     # get unit cell replication factors for periodic BCs
     rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
