@@ -24,9 +24,6 @@ type Framework
 
     # atom count (in primitive unit cell)
     natoms::Int
-    
-    # constructor
-    Framework() = new()
 
     # fractional coordinates
     xf::Array{Float64}
