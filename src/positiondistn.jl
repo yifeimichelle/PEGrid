@@ -12,7 +12,7 @@ function writeprobabilitydistncube(structurename::String, which_adsorbate::Strin
     For make volume plots to visualize where molecules adsorb in the material
     """
     ### load framework info
-    framework = constructframework(structurename)
+    framework = Framework(structurename)
 
     ### Partition unit cell into voxels
     # how many points in each direction? 
@@ -27,7 +27,7 @@ function writeprobabilitydistncube(structurename::String, which_adsorbate::Strin
     dz_f = 1.0 / (N_z - 1)
 
     ### Store particle count in each voxel here
-    counts = Array(Float64, N_x, N_y, N_z)
+    counts = zeros(Float64, N_x, N_y, N_z)
 
     ### Loop through positions in .xyz file of adsorbate positions, store bin counts
     @printf("Reading xyz file of adsorbate positions, binning positions\n")
@@ -87,6 +87,8 @@ function writeprobabilitydistncube(structurename::String, which_adsorbate::Strin
             
         end
     end
+    
+    @assert(sum(counts) == N_positions)
 
     # copy values in first point to last point since these are the same bin via PBC
     counts[N_x, :, :] = counts[1, :, :]
