@@ -179,3 +179,36 @@ function E_vdw_at_points(structurename::String, forcefieldname::String, adsorbat
     
     return E  # in (Kelvin)
 end
+
+function find_min_energy_position(structurename::String, 
+                                  forcefieldname::String, 
+                                  adsorbate::String,
+                                  x_f_start::Array{Float64};
+                                  cutoff::Float64=12.5)
+    """
+    Find minimum energy position of framework
+    """
+    @printf("Constructing framework object for %s...\n", structurename)
+    framework = Framework(structurename)
+
+    @printf("Constructing forcefield object for %s...\n", forcefieldname)
+    forcefield = Forcefield(forcefieldname, adsorbate, cutoff=cutoff)
+    
+    # get unit cell replication factors for periodic BCs
+    rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
+    @printf("\tUnit cell replication factors for cutoff radius %f A: %d x %d x %d\n", cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
+    
+    # get position array and epsilons/sigmas for easy computation
+    pos_array, epsilons, sigmas = _generate_pos_array_epsilons_sigmas(framework, forcefield)
+
+    # define energy as a function of fractional coord
+    E(x) = _E_vdw_at_point!(x[1], x[2], x[3],
+                pos_array, epsilons, sigmas, 
+                framework,
+                rep_factors, cutoff)
+
+    res = optimize(E, x_f_start, method=:nelder_mead)
+    @printf("Minimum E= %f at (%f, %f, %f)\n", res.f_minimum * 8.314/1000.0, res.minimum[1], res.minimum[2], res.minimum[3])
+end
+
+
