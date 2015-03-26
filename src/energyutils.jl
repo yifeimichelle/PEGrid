@@ -209,6 +209,11 @@ function find_min_energy_position(structurename::String,
 
     res = optimize(E, x_f_start, method=:nelder_mead)
     @printf("Minimum E= %f at (%f, %f, %f)\n", res.f_minimum * 8.314/1000.0, res.minimum[1], res.minimum[2], res.minimum[3])
+    if ((sum(res.minimum .< [0.0, 0.0, 0.0]) != 0) | (sum(res.minimum .> [1.0, 1.0, 1.0]) != 0))
+        error("Fractional coords went outside of unit box; choose better starting point\n")
+    end
+
+    return res.f_minimum * 8.314 / 1000.0, res.minimum  # minE, x_min
 end
 
 

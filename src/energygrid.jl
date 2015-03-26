@@ -115,7 +115,6 @@ type Grid
     # functions
     energy_at::Function  # get energy at a point in fractional space
     min_energy::Function  # get minimum energy among grid points
-    min_energy_exact::Function  # use min energy among grid points as a starting point and get exact min energy
     index_to_fractional_coord::Function
 
     function Grid(adsorbate::String, structurename::String, forcefieldname::String)
