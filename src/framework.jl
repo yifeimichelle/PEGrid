@@ -163,7 +163,7 @@ type Framework
             # print result 
             @printf("Chemical formula:\n\t")
             for a in keys(atom_dict)
-                @printf("%s_%d", a, atom_dict[a] / gcd_)
+                @printf("%s_%d", a, atom_dict[a])
             end
             @printf("\n")
 
@@ -174,7 +174,7 @@ type Framework
             formulafile = open(homedir() * "/PEGrid_output/chemicalformulas/" * framework.structurename * ".formula", "w")
             @printf(formulafile, "Atom,Number\n")
             for a in keys(atom_dict)
-                @printf(formulafile, "%s,%d\n", a, atom_dict[a] / gcd_)
+                @printf(formulafile, "%s,%d\n", a, atom_dict[a])
             end
             close(formulafile)
 
