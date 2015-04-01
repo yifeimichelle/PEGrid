@@ -118,18 +118,24 @@ The function `replicate_cssr_to_xyz` will replicate the unit cell of the crystal
 
 The function `replicate_cssr_to_xyz(structurename::String; rep_factor::Int=1)` takes an additional, optional argument `rep_factor` which is the number of times we desire to replicate the unit cell in the .cssr file.
 
-#### Computing the density of a crystal structure
+#### Computing the density and chemical formula of a crystal structure
 
-To compute the crystal density of a framework, first create a `Framework` type, which reads the crystal coordinates, atomic identities, and unit cell sizes from the crystal structure file:
+First create a `Framework` type, which reads the crystal coordinates, atomic identities, and unit cell sizes from the crystal structure file:
 
     include("src/framework.jl")
-    framework = constructframework("${yourstructurename}")
+    framework = Framework("${yourstructurename}")
 
-Then, call the function `crystaldensity(framework::Framework)`
+Then, call the attribute function `crystaldensity()` of the framework object to get the crystal density.
 
-    rho = crystaldensity(framework)
+    rho = framework.crystaldensity()
 
 This returns the crystal density of the framework (units: kg/m3).
+
+To get the chemical formula,
+
+    framework.chemicalformula()
+
+
 
 #### Generating a .vtk mesh file of edges of unit cell 
 
