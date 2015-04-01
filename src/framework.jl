@@ -39,6 +39,7 @@ type Framework
 
     # functions
     crystaldensity::Function
+    chemicalformula::Function
 
     # constructor
     function Framework(structurename::String)
@@ -139,7 +140,46 @@ type Framework
             end
             
             return mass / framework.v_unitcell * 1660.53892  # --> kg/m3
-        end
+        end  # end crystaldensity
+
+        framework.chemicalformula = function ()
+            """
+            Get chemical formula of structure
+            """
+            # use dictionary to count atom types
+            atom_dict = Dict(unique(framework.atoms), zeros(Int, length(unique(framework.atoms))))
+            for i = 1:framework.natoms
+                atom_dict[framework.atoms[i]] += 1
+            end
+
+            # get greatest common divisor
+            gcd_ = gcd([k for k in values(atom_dict)]...)
+            
+            # turn into chemical formula
+            for a in keys(atom_dict)
+                atom_dict[a] = atom_dict[a] / gcd_
+            end
+
+            # print result 
+            @printf("Chemical formula:\n\t")
+            for a in keys(atom_dict)
+                @printf("%s_%d", a, atom_dict[a] / gcd_)
+            end
+            @printf("\n")
+
+            # write to file
+            if ! isdir(homedir() * "/PEGrid_output/chemicalformulas")
+               mkdir(homedir() * "/PEGrid_output/chemicalformulas") 
+            end
+            formulafile = open(homedir() * "/PEGrid_output/chemicalformulas/" * framework.structurename * ".formula", "w")
+            @printf(formulafile, "Atom,Number\n")
+            for a in keys(atom_dict)
+                @printf(formulafile, "%s,%d\n", a, atom_dict[a] / gcd_)
+            end
+            close(formulafile)
+
+            return atom_dict
+        end  # end chemicalformula
 
         return framework
     end  # end crystal density
