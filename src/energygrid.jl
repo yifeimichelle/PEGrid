@@ -48,8 +48,8 @@ function writegrid(adsorbate::String, structurename::String, forcefieldname::Str
     pos_array, epsilons, sigmas = _generate_pos_array_epsilons_sigmas(framework, forcefield)
     
     # open grid file
-    if ! isdir(homedir() * "/PEGrid_output")
-       mkdir(homedir() * "/PEGrid_output") 
+    if ! isdir(homedir() * "/PEGrid_output/" * forcefieldname)
+       mkdir(homedir() * "/PEGrid_output/" * forcefieldname)
     end
     gridfilename = homedir() * "/PEGrid_output/" * forcefieldname * "/" * framework.structurename * "_" * forcefield.adsorbate * ".cube"
     gridfile = open(gridfilename, "w")
