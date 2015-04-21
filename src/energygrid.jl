@@ -49,7 +49,7 @@ function writegrid(adsorbate::String, structurename::String, forcefieldname::Str
     
     # open grid file
     if ! isdir(homedir() * "/PEGrid_output/" * forcefieldname)
-       mkdir(homedir() * "/PEGrid_output/" * forcefieldname) 
+       mkdir(homedir() * "/PEGrid_output/" * forcefieldname)
     end
     gridfilename = homedir() * "/PEGrid_output/" * forcefieldname * "/" * framework.structurename * "_" * forcefield.adsorbate * ".cube"
     gridfile = open(gridfilename, "w")
