@@ -11,7 +11,7 @@ With this .cube energy grid file, we can visualize the potential energy contours
 
 The data folder contains the crystal structure file, the force field used to compute the potential energy of the adsorbate, and the atomic masses of the [pseudo-]atoms.
 
-PEGrid requires the `DataFrames` package in Julia. To install, type in Julia: `Pkg.add("DataFrames")`.
+PEGrid requires the `DataFrames` and `Optim` packages in Julia. To install, type in Julia: `Pkg.add("DataFrames")`.
 
 #### Crystal structure file (.cssr)
 
