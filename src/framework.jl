@@ -161,7 +161,7 @@ type Framework
             end
 
             # print result 
-            @printf("Chemical formula:\n\t")
+            @printf("Chemical formula of %s:\n\t", framework.structurename)
             for a in keys(atom_dict)
                 @printf("%s_%d", a, atom_dict[a])
             end
@@ -247,4 +247,5 @@ function replicate_cssr_to_xyz(frameworkname::String; rep_factor::Int=1)
         end
     end
     close(xyz_file)
+    @printf("Replicated .xyz in %s\n", homedir() * "/PEGrid_output/" * framework.structurename * ".xyz")
 end

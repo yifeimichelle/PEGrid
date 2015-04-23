@@ -206,11 +206,21 @@ function find_min_energy_position(structurename::String,
                 pos_array, epsilons, sigmas, 
                 framework,
                 rep_factors, cutoff)
-
+    
     res = optimize(E, x_f_start, method=:nelder_mead)
     @printf("Minimum E= %f at (%f, %f, %f)\n", res.f_minimum * 8.314/1000.0, res.minimum[1], res.minimum[2], res.minimum[3])
-    if ((sum(res.minimum .< [0.0, 0.0, 0.0]) != 0) | (sum(res.minimum .> [1.0, 1.0, 1.0]) != 0))
-        error("Fractional coords went outside of unit box; choose better starting point\n")
+    
+    # If optimization routine found a point outside of the home unit cell, try a new starting point
+    while ((sum(res.minimum .< [-0.000001, -0.00001, -0.000001]) != 0) | (sum(res.minimum .> [1.00001, 1.000001, 1.000010]) != 0))
+        for i = 1:3
+            x_f_start[i] = mod(res.minimum[i], 1.0)
+            x_f_start[i] += 0.1 * rand()
+        end
+        
+        @printf("Fractional coords went outside of unit box; trying another starting point (%f, %f, %f)\n", x_f_start[1], x_f_start[2], x_f_start[3])
+        res = optimize(E, x_f_start, method=:nelder_mead)
+ #         error("Fractional coords went outside of unit box; choose better starting point\n")
+        # bring into home unit cell (Fractional coords in [0,1]) and perturb randomly
     end
 
     return res.f_minimum * 8.314 / 1000.0, res.minimum  # minE, x_min
