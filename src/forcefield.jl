@@ -6,7 +6,7 @@ using DataFrames
 
 type Forcefield
     """
-    Attributes of a force field
+    Stores attributes of a force field
     """
     name::String
 
@@ -66,6 +66,9 @@ type Forcefield
             if mixingrules == "Lorenz-Berthelot"
                 forcefield.epsilon[i] = sqrt(adsorbate_eps * df[:epsilon][i])
                 forcefield.sigma[i] = (adsorbate_sig + df[:sigma][i]) / 2.0
+            elseif mixingrules == "Surface"
+                forcefield.epsilon[i] = df[:epsilon][i]
+                forcefield.sigma[i] = df[:sigma][i]
             else
                 error("These mixing rules are not implemented")
             end
