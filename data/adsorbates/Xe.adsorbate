@@ -1,0 +1,6 @@
+Adsorbate: Xe
+Number_of_beads: 1
+Bead_names: Xe
+Bead_positions.csv:
+x,y,z
+0,0,0
