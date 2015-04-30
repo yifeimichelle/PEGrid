@@ -4,10 +4,11 @@
 include("framework.jl")
 include("forcefield.jl")
 include("energyutils.jl")
+include("adsorbates.jl")
 using Optim
 
 
-function writegrid(adsorbate::String, structurename::String, forcefieldname::String; gridspacing=0.1, cutoff=12.5)
+function writegrid(adsorbatename::String, structurename::String, forcefieldname::String; gridspacing=0.1, cutoff=12.5)
     """
     Compute the potential energy of an adsorbate molecule on a 3D grid of points superimposed on the unit cell of the structure.
 
@@ -17,13 +18,22 @@ function writegrid(adsorbate::String, structurename::String, forcefieldname::Str
     """
     @printf("Constructing framework object for %s...\n", structurename)
     framework = Framework(structurename)
+    
+    @printf("Constructing adsorbate %s...\n", adsorbatename)
+    adsorbate = Adsorbate(adsorbatename)
+    adsorbate_home_coords = adsorbate.bead_xyz  # store home coords b4 do translations
 
-    @printf("Constructing forcefield object for %s...\n", forcefieldname)
-    forcefield = Forcefield(forcefieldname, adsorbate, cutoff=cutoff)
+    @printf("Constructing forcefield(s) for bead(s) in %s...\n", forcefieldname)
+    forcefields = Forcefield[]  # list of forcefields
+    for b = 1:adsorbate.nbeads
+        @printf("\tBead %s...\n", adsorbate.bead_names[b])
+        push!(forcefields, Forcefield(forcefieldname, adsorbate.bead_names[b], cutoff=cutoff))
+    end
     
     # get unit cell replication factors for periodic BCs
     rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
-    @printf("Unit cell replication factors for LJ cutoff of %.2f A: %d by %d by %d\n", forcefield.cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
+    @printf("Unit cell replication factors for LJ cutoff of %.2f A: %d by %d by %d\n", cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
+
     # how many grid points in each direction? 
     N_x = int(framework.a / gridspacing) + 1
     N_y = int(framework.b / gridspacing) + 1
@@ -45,13 +55,13 @@ function writegrid(adsorbate::String, structurename::String, forcefieldname::Str
     @printf("Grid spacing: dx = %.2f, dy = %.2f, dz = %.2f\n", cartesian_spacing[1], cartesian_spacing[2], cartesian_spacing[3])
 
     # get array of framework atom positions and corresponding epsilons and sigmas for speed
-    pos_array, epsilons, sigmas = _generate_pos_array_epsilons_sigmas(framework, forcefield)
+    epsilons, sigmas = _generate_epsilons_sigmas(framework, forcefields)
     
     # open grid file
     if ! isdir(homedir() * "/PEGrid_output/" * forcefieldname)
        mkdir(homedir() * "/PEGrid_output/" * forcefieldname)
     end
-    gridfilename = homedir() * "/PEGrid_output/" * forcefieldname * "/" * framework.structurename * "_" * forcefield.adsorbate * ".cube"
+    gridfilename = homedir() * "/PEGrid_output/" * forcefieldname * "/" * framework.structurename * "_" * adsorbatename * ".cube"
     gridfile = open(gridfilename, "w")
 
     # Format of .cube described here http://paulbourke.net/dataformats/cube/
@@ -72,11 +82,19 @@ function writegrid(adsorbate::String, structurename::String, forcefieldname::Str
 
         for j in 1:N_y  # loop over y_f-grid points
             for k in 1:N_z  # loop over z_f-grid points
+                
+                # translate adsorbate to grid pt
+                adsorbate.translate(framework.f_to_cartesian_mtrx * [xf_grid[i], yf_grid[j], zf_grid[k]])
 
-                E = _E_vdw_at_point!(xf_grid[i], yf_grid[j], zf_grid[k], 
-                                    pos_array, epsilons, sigmas, 
-                                    framework,
-                                    rep_factors, cutoff)
+                E = _energy_of_adsorbate!(adsorbate,
+                                          epsilons,
+                                          sigmas,
+                                          framework,
+                                          rep_factors,
+                                          cutoff)
+                
+                # translate adsorbate back to home coords
+                adsorbate.bead_xyz = adsorbate_home_coords
                 
                 # write energy at this point to grid file
                 @printf(gridfile, "%e ", E * 8.314 / 1000.0)  # store in kJ/mol

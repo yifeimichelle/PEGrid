@@ -9,7 +9,7 @@ function evaluate_expressions_on_all_cores(;kwargs...)
     end
 end
 
-function parallel_writegrid(adsorbate::String, structurename::String, forcefieldname::String; gridspacing=0.1, cutoff=12.5)
+function parallel_writegrid(adsorbatename::String, structurename::String, forcefieldname::String; gridspacing=0.1, cutoff=12.5)
     """
     Compute the potential energy of an adsorbate molecule on a 3D grid of points superimposed on the unit cell of the structure.
     Parallelized across cores.
@@ -18,41 +18,47 @@ function parallel_writegrid(adsorbate::String, structurename::String, forcefield
 
     :param: String adsorbate: the name of the adsorbate molecule, corresponding to the forcefield file
     """
- #     @everywhere {
- #         structurename = "IRMOF-1"
- #         forcefieldname = "UFF"
- #         adsorbate = "Xe"
- #         cutoff = 12.5
- #         gridspacing = 1.0
- #     }
-
     @printf("Number of parallel cores: %d\n", nprocs())
     require("src/framework.jl")  # these statements load these files on all cores
     require("src/forcefield.jl")
     require("src/energyutils.jl")
+    require("src/adsorbates.jl")
 
     # broadcast function arguments to all cores
-    evaluate_expressions_on_all_cores(adsorbate=adsorbate)
+    evaluate_expressions_on_all_cores(adsorbatename=adsorbatename)
     evaluate_expressions_on_all_cores(structurename=structurename)
     evaluate_expressions_on_all_cores(forcefieldname=forcefieldname)
     evaluate_expressions_on_all_cores(gridspacing=gridspacing)
     evaluate_expressions_on_all_cores(cutoff=cutoff)
-   
+  
+    # load the adsorbate on all cores
+    @printf("Constructing adsorbate %s on all cores...\n", adsorbatename)
+    @everywhere begin
+        adsorbate = Adsorbate(adsorbatename)
+        adsorbate_home_coords = adsorbate.bead_xyz  # store home coords b4 do translations
+    end
+
     # load the framework on all cores
     @printf("Constructing framework object on all cores for %s...\n", structurename)
     @everywhere framework = Framework(structurename)
 
     # load the forcefield on all cores
-    @printf("Constructing forcefield object on all cores for %s...\n", forcefieldname)
-    @everywhere forcefield = Forcefield(forcefieldname, adsorbate, cutoff=cutoff)
+    @printf("Constructing forcefield(s) for bead(s) in %s...\n", forcefieldname)
+    @everywhere begin
+        forcefields = Forcefield[]  # list of forcefields
+        for b = 1:adsorbate.nbeads
+            @printf("\tBead %s...\n", adsorbate.bead_names[b])
+            push!(forcefields, Forcefield(forcefieldname, adsorbate.bead_names[b], cutoff=cutoff))
+        end
+    end
 
     # get unit cell replication factors for periodic BCs on all cores
     @everywhere rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
-    @printf("Unit cell replication factors for LJ cutoff of %.2f A: %d by %d by %d\n", forcefield.cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
+    @printf("Unit cell replication factors for LJ cutoff of %.2f A: %d by %d by %d\n", cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
 
     # get array of framework atom positions and corresponding epsilons and sigmas for speed on all cores
     # TODO is a shared array better? is this too much memory?
-    @everywhere pos_array, epsilons, sigmas = _generate_pos_array_epsilons_sigmas(framework, forcefield)
+    @everywhere epsilons, sigmas = _generate_epsilons_sigmas(framework, forcefields)
 
     ### ------------------------------------------------------------------------- ###
     ### This is all done on current core only. e.g. writing to grid file
@@ -84,7 +90,7 @@ function parallel_writegrid(adsorbate::String, structurename::String, forcefield
     if ! isdir(homedir() * "/PEGrid_output/" * forcefieldname)
        mkdir(homedir() * "/PEGrid_output/" * forcefieldname) 
     end
-    gridfilename = homedir() * "/PEGrid_output/" * forcefieldname * "/" * framework.structurename * "_" * forcefield.adsorbate * ".cube"
+    gridfilename = homedir() * "/PEGrid_output/" * forcefieldname * "/" * framework.structurename * "_" * adsorbatename * ".cube"
     gridfile = open(gridfilename, "w")
 
     # Format of .cube described here http://paulbourke.net/dataformats/cube/
@@ -103,7 +109,6 @@ function parallel_writegrid(adsorbate::String, structurename::String, forcefield
     # pre-allocate 2D array that stores sheet of energies in y-z plane
     @everywhere E_yz_sheet = zeros(N_y, N_z)
 
-
     @everywhere function compute_E_on_sheet(xf::Float64)
         """
         Compute energy on sheet of points.
@@ -112,10 +117,19 @@ function parallel_writegrid(adsorbate::String, structurename::String, forcefield
         """
         for j in 1:N_y  # loop over y_f-grid points
             for k in 1:N_z  # loop over z_f-grid points
-                E_yz_sheet[j,k] = _E_vdw_at_point!(xf, yf_grid[j], zf_grid[k], 
-                                        pos_array, epsilons, sigmas, 
-                                        framework,
-                                        rep_factors, cutoff)
+                
+                # translate adsorbate to grid pt
+                adsorbate.translate(framework.f_to_cartesian_mtrx * [xf, yf_grid[j], zf_grid[k]])
+
+                E_yz_sheet[j,k] = _energy_of_adsorbate!(adsorbate,
+                                          epsilons,
+                                          sigmas,
+                                          framework,
+                                          rep_factors,
+                                          cutoff)
+
+                # translate adsorbate back to home coords
+                adsorbate.bead_xyz = adsorbate_home_coords
             end
         end
         

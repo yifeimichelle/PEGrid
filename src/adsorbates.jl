@@ -9,10 +9,13 @@ type Adsorbate
     
     nbeads::Int  # number LJ spheres that the adsorbate consists of
 
-    # nbeads by 3 array with bead_positions
+    # 3 by nbeads array with bead_xyz, Cartesian coords of bead
     # convention: first bead is 0, 0, 0
-    bead_positions::Array{Float64}
+    bead_xyz::Array{Float64}  # CARTESIAN (so irrespective of framework)
     bead_names::Array{String}  # corresponds to name in force field
+
+    translate::Function  # translate adsorbate by Cartesian vector x
+    rotate::Function  # perform a rotation of the adsorbate
 
     function Adsorbate(name::String)
         """
@@ -33,7 +36,7 @@ type Adsorbate
             if i == 2
                 adsorbate.nbeads = parseint(split(line)[2])
                 adsorbate.bead_names = String[]
-                adsorbate.bead_positions = zeros(adsorbate.nbeads, 3)
+                adsorbate.bead_xyz = zeros(3, adsorbate.nbeads)
             end
             if i == 3
                 for b in 1:adsorbate.nbeads
@@ -41,17 +44,30 @@ type Adsorbate
                 end
             end
             if i > 5
-                print(split(line, ","))
-                adsorbate.bead_positions[i - 5, 1] = parsefloat(split(line, ",")[1])
-                adsorbate.bead_positions[i - 5, 2] = parsefloat(split(line, ",")[2])
-                adsorbate.bead_positions[i - 5, 3] = parsefloat(replace(split(line, ",")[3], "\n", ""))
+                adsorbate.bead_xyz[1, i - 5] = parsefloat(split(line, ",")[1])
+                adsorbate.bead_xyz[2, i - 5] = parsefloat(split(line, ",")[2])
+                adsorbate.bead_xyz[3, i - 5] = parsefloat(replace(split(line, ",")[3], "\n", ""))
             end
         end
 
         close(f)
 
-        if (adsorbate.bead_positions[1,1] != 0.0) | (adsorbate.bead_positions[1,2] != 0.0) | (adsorbate.bead_positions[1,3] != 0.0)
+        if (adsorbate.bead_xyz[1,1] != 0.0) | (adsorbate.bead_xyz[2,1] != 0.0) | (adsorbate.bead_xyz[3,1] != 0.0)
             error("First bead must be at 0,0,0 by convention")
+        end
+
+        adsorbate.translate = function (x::Array{Float64})
+            """
+            Translate adsorbate by Cartesian vector x
+            (function of self)
+            """
+            adsorbate.bead_xyz = broadcast(+, adsorbate.bead_xyz, x)
+        end 
+
+        adsorbate.rotate = function (alpha::Float64, beta::Float64, gamma::Float64)
+            """
+            Rotation about Euler angles
+            """
         end
 
         return adsorbate

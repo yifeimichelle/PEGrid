@@ -25,10 +25,8 @@ type Framework
     # atom count (in primitive unit cell)
     natoms::Int
     
-    # fractional coordinates
-    xf::Array{Float64}
-    yf::Array{Float64}
-    zf::Array{Float64}
+    # fractional coordinates (3 by natoms)
+    fractional_coords::Array{Float64}
 
     # atom identites
     atoms::Array{String}
@@ -102,9 +100,7 @@ type Framework
         # get atom count, initialize arrays holding coords
         framework.natoms = int(split(readline(f))[1])
         framework.atoms = Array(String, framework.natoms)
-        framework.xf = zeros(Float64, framework.natoms)  # fractional coordinates
-        framework.yf = zeros(Float64, framework.natoms)
-        framework.zf = zeros(Float64, framework.natoms)
+        framework.fractional_coords = zeros(Float64, 3, framework.natoms)  # fractional coordinates
 
         # read in atoms and fractional coordinates
         readline(f) # waste a line
@@ -113,9 +109,9 @@ type Framework
 
             framework.atoms[a] = line[2]
 
-            framework.xf[a] = float(line[3]) % 1.0 # wrap to [0,1]
-            framework.yf[a] = float(line[4]) % 1.0
-            framework.zf[a] = float(line[5]) % 1.0
+            framework.fractional_coords[1, a] = float(line[3]) % 1.0 # wrap to [0,1]
+            framework.fractional_coords[2, a] = float(line[4]) % 1.0
+            framework.fractional_coords[3, a] = float(line[5]) % 1.0
         end
         
         close(f) # close file
@@ -236,9 +232,7 @@ function replicate_cssr_to_xyz(frameworkname::String; rep_factor::Int=1)
         for rep_x = -rep_factor:rep_factor
             for rep_y = -rep_factor:rep_factor
                 for rep_z = -rep_factor:rep_factor
-                    x_f = [framework.xf[a] + 1.0*rep_x,
-                           framework.yf[a] + 1.0*rep_y,
-                           framework.zf[a] + 1.0*rep_z]
+                    x_f = framework.fractional_coords[:, a] + 1.0 * [rep_x, rep_y, rep_z]  # fractional coord
                     xyz = framework.f_to_cartesian_mtrx * x_f
                     @printf(xyz_file, "%s %f %f %f\n", framework.atoms[a], 
                             xyz[1], xyz[2], xyz[3])
