@@ -8,7 +8,13 @@ include("adsorbates.jl")
 using Optim
 
 
-function writegrid(adsorbatename::String, structurename::String, forcefieldname::String; gridspacing=0.1, cutoff=12.5)
+function writegrid(adsorbatename::String, 
+                   structurename::String, 
+                   forcefieldname::String; 
+                   gridspacing=0.1, 
+                   cutoff=12.5, 
+                   temperature::Float64=-1.0, 
+                   num_rotation_samples::Int=1000)
     """
     Compute the potential energy of an adsorbate molecule on a 3D grid of points superimposed on the unit cell of the structure.
 
@@ -21,7 +27,9 @@ function writegrid(adsorbatename::String, structurename::String, forcefieldname:
     
     @printf("Constructing adsorbate %s...\n", adsorbatename)
     adsorbate = Adsorbate(adsorbatename)
-    adsorbate_home_coords = adsorbate.bead_xyz  # store home coords b4 do translations
+    if (adsorbate.nbeads > 1) & (temperature == -1.0)
+        error("Provide temperature for Boltzmann weighted rotations, nbeads > 1 in adsorbate.")
+    end
 
     @printf("Constructing forcefield(s) for bead(s) in %s...\n", forcefieldname)
     forcefields = Forcefield[]  # list of forcefields
@@ -85,16 +93,37 @@ function writegrid(adsorbatename::String, structurename::String, forcefieldname:
                 
                 # translate adsorbate to grid pt
                 adsorbate.translate(framework.f_to_cartesian_mtrx * [xf_grid[i], yf_grid[j], zf_grid[k]])
-
-                E = _energy_of_adsorbate!(adsorbate,
-                                          epsilons,
-                                          sigmas,
-                                          framework,
-                                          rep_factors,
-                                          cutoff)
                 
-                # translate adsorbate back to home coords
-                adsorbate.bead_xyz = adsorbate_home_coords
+                # compute energy here
+                if adsorbate.nbeads == 1  # no need for sampling rotations
+                    E = _energy_of_adsorbate!(adsorbate,
+                                              epsilons,
+                                              sigmas,
+                                              framework,
+                                              rep_factors,
+                                              cutoff)
+                else  # need to sample rotations and get boltzmann-weighted average
+                    boltzmann_weight_sum = 0.0
+                    weighted_energy_sum = 0.0
+                    for rot = 1:num_rotation_samples
+                        adsorbate.perform_uniform_random_rotation()
+
+                        _energy = _energy_of_adsorbate!(adsorbate,
+                                                    epsilons,
+                                                    sigmas,
+                                                    framework,
+                                                    rep_factors, 
+                                                    cutoff)
+
+                        boltzmann_weight = exp(-_energy / temperature)
+                        boltzmann_weight_sum += boltzmann_weight
+                        weighted_energy_sum += boltzmann_weight * _energy
+                    end
+                    E = weighted_energy_sum / boltzmann_weight_sum
+                end
+                
+                # translate adsorbate back to COM
+                adsorbate.set_origin_at_COM()
                 
                 # write energy at this point to grid file
                 @printf(gridfile, "%e ", E * 8.314 / 1000.0)  # store in kJ/mol

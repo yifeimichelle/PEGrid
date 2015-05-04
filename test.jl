@@ -14,11 +14,13 @@ include("src/energyutils.jl")
 @test_approx_eq_eps energy_of_adsorbate("CH4", [.5,.2,.3], "IRMOF-1", "UFF", cutoff=12.5) [412049.736961] .1
 fractional_coords = [.2 .3; .1 .4; .5 .8]
 E = energy_of_adsorbate("CH4", fractional_coords, "IRMOF-1", "UFF", cutoff=12.5)
-E_CH2CH2 = energy_of_adsorbate("CH2CH2", fractional_coords, "IRMOF-1", "UFF", cutoff=12.5)
+E_CH2CH2 = energy_of_adsorbate("CH2CH2", fractional_coords, "IRMOF-1", "UFF", cutoff=12.5, temperature=298.0)
+@printf("Energy of CH2CH2: %f\n", E_CH2CH2[1])
 
 # energy grid
 @printf("energy grid test...\n\n\n")
 include("src/energygrid.jl")
+writegrid("CH2CH2", "IRMOF-1", "UFF", gridspacing=1.0, cutoff=12.5,temperature=298.0)
 writegrid("CH4", "IRMOF-1", "UFF", gridspacing=1.0, cutoff=12.5)
 
 # surface area

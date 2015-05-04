@@ -9,7 +9,13 @@ function evaluate_expressions_on_all_cores(;kwargs...)
     end
 end
 
-function parallel_writegrid(adsorbatename::String, structurename::String, forcefieldname::String; gridspacing=0.1, cutoff=12.5)
+function parallel_writegrid(adsorbatename::String, 
+                            structurename::String, 
+                            forcefieldname::String; 
+                            gridspacing=0.1, 
+                            cutoff=12.5, 
+                            temperature::Float64=-1.0, 
+                            num_rotation_samples::Int=1000)
     """
     Compute the potential energy of an adsorbate molecule on a 3D grid of points superimposed on the unit cell of the structure.
     Parallelized across cores.
@@ -30,12 +36,16 @@ function parallel_writegrid(adsorbatename::String, structurename::String, forcef
     evaluate_expressions_on_all_cores(forcefieldname=forcefieldname)
     evaluate_expressions_on_all_cores(gridspacing=gridspacing)
     evaluate_expressions_on_all_cores(cutoff=cutoff)
+    evaluate_expressions_on_all_cores(temperature=temperature)
+    evaluate_expressions_on_all_cores(num_rotation_samples=num_rotation_samples)
   
     # load the adsorbate on all cores
     @printf("Constructing adsorbate %s on all cores...\n", adsorbatename)
     @everywhere begin
         adsorbate = Adsorbate(adsorbatename)
-        adsorbate_home_coords = adsorbate.bead_xyz  # store home coords b4 do translations
+        if (adsorbate.nbeads > 1) & (temperature == -1.0)
+            error("Provide temperature for Boltzmann weighted rotations, nbeads > 1 in adsorbate.")
+        end
     end
 
     # load the framework on all cores
@@ -47,7 +57,6 @@ function parallel_writegrid(adsorbatename::String, structurename::String, forcef
     @everywhere begin
         forcefields = Forcefield[]  # list of forcefields
         for b = 1:adsorbate.nbeads
-            @printf("\tBead %s...\n", adsorbate.bead_names[b])
             push!(forcefields, Forcefield(forcefieldname, adsorbate.bead_names[b], cutoff=cutoff))
         end
     end
@@ -115,21 +124,42 @@ function parallel_writegrid(adsorbatename::String, structurename::String, forcef
 
         N_y, N_z, pos_array, epsilons, sigmas, E_yz_sheet assumed present
         """
-        for j in 1:N_y  # loop over y_f-grid points
-            for k in 1:N_z  # loop over z_f-grid points
+        for j = 1:N_y  # loop over y_f-grid points
+            for k = 1:N_z  # loop over z_f-grid points
                 
                 # translate adsorbate to grid pt
                 adsorbate.translate(framework.f_to_cartesian_mtrx * [xf, yf_grid[j], zf_grid[k]])
 
-                E_yz_sheet[j,k] = _energy_of_adsorbate!(adsorbate,
-                                          epsilons,
-                                          sigmas,
-                                          framework,
-                                          rep_factors,
-                                          cutoff)
+                # compute energy here
+                if adsorbate.nbeads == 1  # no need for sampling rotations
+                    E_yz_sheet[j, k] = _energy_of_adsorbate!(adsorbate,
+                                              epsilons,
+                                              sigmas,
+                                              framework,
+                                              rep_factors,
+                                              cutoff)
+                else  # need to sample rotations and get boltzmann-weighted average
+                    boltzmann_weight_sum = 0.0
+                    weighted_energy_sum = 0.0
+                    for rot = 1:num_rotation_samples
+                        adsorbate.perform_uniform_random_rotation()
 
-                # translate adsorbate back to home coords
-                adsorbate.bead_xyz = adsorbate_home_coords
+                        _energy = _energy_of_adsorbate!(adsorbate,
+                                                    epsilons,
+                                                    sigmas,
+                                                    framework,
+                                                    rep_factors, 
+                                                    cutoff)
+
+                        boltzmann_weight = exp(-_energy / temperature)
+                        boltzmann_weight_sum += boltzmann_weight
+                        weighted_energy_sum += boltzmann_weight * _energy
+                    end
+                    E_yz_sheet[j, k] = weighted_energy_sum / boltzmann_weight_sum
+                end
+
+                # translate adsorbate back to origin
+                adsorbate.set_origin_at_COM()
             end
         end
         

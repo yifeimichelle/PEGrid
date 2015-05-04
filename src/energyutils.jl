@@ -13,13 +13,14 @@ function _energy_of_bead(xyz_coord::Array{Float64},
                          rep_factors::Array{Int},
                          cutoff::Float64)
     """
-    Compute Van der Waals interaction energy via the LJ potential of a bead at fractional_coord
-
-    :param Array{Float64} epsilons: Lennard-Jones epsilon parameters for bead with corresponding framework atoms
-    :param Array{Float64} sigmas: Lennard-Jones sigma parameters for bead with corresponding framework atoms
+    Compute Van der Waals interaction energy via the LJ potential of a bead at xyz_coord (Cartesian!)
+    
+    :param Array{Float64} xyz_coord: Cartesian coordinate of bead. shape: (3,)
+    :param Array{Float64} epsilons: Lennard-Jones epsilon parameters for bead with corresponding framework atoms. shape: (framework.natoms,)
+    :param Array{Float64} sigmas: Lennard-Jones sigma parameters for bead with corresponding framework atoms. shape: (framework.natoms,)
+    :param Framework framework: the structure
     :param Array{Int} rep_factors: x,y,z replication factors of primitive unit cell for PBCs
     :param Float64 cutoff: Lennard-Jones cutoff distance
-    :returns: Float64 E: energy of adsorbate at (x_f,y_f,z_f) in Kelvin (well, same units as epsilon)
     """
     @assert(size(xyz_coord) == (3,))
     # get fractional coord of bead
@@ -161,7 +162,9 @@ function energy_of_adsorbate(adsorbatename::String,
                         fractional_translations::Array{Float64},
                         structurename::String,
                         forcefieldname::String;
-                        cutoff::Float64=12.5)
+                        cutoff::Float64=12.5,
+                        num_rotation_samples::Int=500,
+                        temperature::Float64=-1.0)
     """
     Compute energy of adsorbate
 
@@ -169,6 +172,9 @@ function energy_of_adsorbate(adsorbatename::String,
     """
     @printf("Constructing adsorbate %s...\n", adsorbatename)
     adsorbate = Adsorbate(adsorbatename)
+    if (adsorbate.nbeads > 1) & (temperature == -1.0)
+        error("Need to input temperature (in K) for adsorbate with >1 beads for Boltmann weighting of orientations (rotations)")
+    end
 
     @printf("Constructing framework object for %s...\n", structurename)
     framework = Framework(structurename)
@@ -200,17 +206,35 @@ function energy_of_adsorbate(adsorbatename::String,
         # translate adsorbate by vector:
         xyz_translation = framework.f_to_cartesian_mtrx * fractional_translations[:, i]
         adsorbate.translate(xyz_translation)
-        # compute energy
-        E[i] = _energy_of_adsorbate!(adsorbate,
-                                    epsilons,
-                                    sigmas,
-                                    framework,
-                                    rep_factors, 
-                                    cutoff)
 
-        # translate back
-        adsorbate.translate(-xyz_translation)
-        # TODO: cld numerical issues arise, subtracting adding many times? drift of orig coords...
+        # compute energy
+        if adsorbate.nbeads == 1  # no need for sampling rotations
+            E[i] = _energy_of_adsorbate!(adsorbate,
+                                        epsilons,
+                                        sigmas,
+                                        framework,
+                                        rep_factors, 
+                                        cutoff)
+        else  # need to sample rotations and get boltzmann-weighted average
+            boltzmann_weight_sum = 0.0
+            weighted_energy_sum = 0.0
+            for k = 1:num_rotation_samples
+                adsorbate.perform_uniform_random_rotation()
+                _energy = _energy_of_adsorbate!(adsorbate,
+                                            epsilons,
+                                            sigmas,
+                                            framework,
+                                            rep_factors, 
+                                            cutoff)
+                boltzmann_weight = exp(-_energy / temperature)
+                boltzmann_weight_sum += boltzmann_weight
+                weighted_energy_sum += boltzmann_weight * _energy
+            end
+            E[i] = weighted_energy_sum / boltzmann_weight_sum
+        end
+
+        # translate back to origin
+        adsorbate.set_origin_at_COM()
     end
     
     return E  # in (Kelvin)
