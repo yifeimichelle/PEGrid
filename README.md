@@ -21,7 +21,7 @@ This Julia package is for analyzing nanoporous materials for gas adsorption usin
 
 PEGrid requires as input the structure of the nanoporous material and the force field parameters used to model the energy of the interactions between an adsorbate molecule and the atoms of the material.
 
-### 'data/structures/' for crystal structures
+### `data/structures/` for crystal structures
 Put the crystal structure files in .cssr format here. The popular .cif format can be converted to .cssr using [Zeo++](http://www.maciejharanczyk.info/Zeopp/):
     
     ./network -cssr ${yourstructurename}.cif
@@ -40,7 +40,7 @@ framework.chemicalformula()  # get chemical formula
 framework.crystladensity()  # get crystal density (kg/m3)
 ```
 
-### 'data/forcefields/' for force field
+### `data/forcefields/` for force field
 
 The force field is the model and parameters used to describe the potential energy of the adsorbate molecule with the atoms of the crystal structure. PEGrid models the interaction between the adsorbate *a* and crystal structure atom type *i* a distance *r* apart with the Lennard-Jones potential:
 
@@ -65,11 +65,11 @@ forcefield.epsilon  # corresponding Lennard-Jones epsilons
 forcefield.sigma  # corresponding Lennard-Jones sigmas
 ```
 
-### 'data/atomicmasses.csv' for storing atomic masses of the [psuedo-]atoms 
+### `data/atomicmasses.csv` for storing atomic masses of the [psuedo-]atoms 
 
 In order to calculate the crystal density of the framework and center of mass of a complicated adsorbate molecule, PEGrid stores the atomic masses (units: amu) of the atoms in `data/atomicmasses.csv`. We say "pseudo-atom" because e.g. two CH<sub>2</sub> beads are used to model ethene.
 
-### 'data/adsorbates/' for adsorbate molecule information
+### `data/adsorbates/` for adsorbate molecule information
 
 As an example, ethene, which we name 'CH2CH2' consists of two 'CH2' beads with a bond length of 1.33 A:
 
@@ -81,7 +81,7 @@ As an example, ethene, which we name 'CH2CH2' consists of two 'CH2' beads with a
     0,0,0
     1.33,0,0
 
-The adsorbate molecule will automatically be translated to coordinates such that the origin is at the center of mass. You can play with your adsorbate by:
+The adsorbate molecule will automatically be translated to coordinates such that the origin is at the center of mass, so do not fret about the non-uniqueness of coordinate definitions. You can play with your adsorbate by:
 
 ```Julia
 ethene = Adsorbate("CH2CH2")
