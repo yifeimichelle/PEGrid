@@ -1,27 +1,46 @@
 PEGrid
 ======
 
-This code, written in Julia, is for visualizing the potential energy contours of an adsorbate molecule inside a nanoporous material. We superimpose onto the unit cell of the crystal a 3D grid of points and compute the potential energy of an adsorbate molecule at each point. The output of the program is a Gaussian cube file (file extension: .cube) of the potential energies (units: kJ/mol) of the adsorbate at the grid points.
+This Julia package is for analyzing nanoporous materials for gas adsorption using classical force fields. It has the following capabilities:
 
-With this .cube energy grid file, we can visualize the potential energy contours of the adsorbate inside the pores of the crystal as in the figure below.
+* writes grids of the potential energy of an adsorbate molecule in the material in a Gaussian cube format (file extension: .cube) With this .cube energy grid file, we can visualize the potential energy contours of the adsorbate inside the pores of the crystal as in the figure below.
 
 <a href="url"><img src="cover.jpeg" align="middle" height="500" width="675" ></a>
 
+* Computing the potential energy of an adsorbate at a particular position/configuration in the structure
+
+* Compute Henry constants
+
+* Given snapshots of adsorbate positions from a Grand-canonical Monte Carlo simulation, PEGrid can bin adsorbate positions and store them in volume files for visualizing probability density functions of adsorbate locations.
+
+* Replicating the unit cell of a .cssr file
+
+* Compute the crystal density and irreducible chemical formula of a nanoporous material
+
 ## Necessary data
 
-The data folder contains the crystal structure file, the force field used to compute the potential energy of the adsorbate, and the atomic masses of the [pseudo-]atoms.
+PEGrid requires as input the structure of the nanoporous material and the force field parameters used to model the energy of the interactions between an adsorbate molecule and the atoms of the material.
 
-PEGrid requires the `DataFrames` and `Optim` packages in Julia. To install, type in Julia: `Pkg.add("DataFrames")`.
-
-#### Crystal structure file (.cssr)
-
-PEGrid reads crystal structure files in the .cssr format. The popular .cif format can be converted to .cssr using [Zeo++](http://www.maciejharanczyk.info/Zeopp/):
-
+### 'data/structures/' for crystal structures
+Put the crystal structure files in .cssr format here. The popular .cif format can be converted to .cssr using [Zeo++](http://www.maciejharanczyk.info/Zeopp/):
+    
     ./network -cssr ${yourstructurename}.cif
 
-Place the .cssr crystal structure files in `data/structures`.
+You can play with a framework object by:
 
-#### Force field file (.csv)
+```Julia
+framework = Framework("IRMOF-1")  # load IRMOF-1.cssr
+framework.a  # length of crystal axis a
+framework.alpha  # angle in unit cell
+framework.natoms  # number of atoms in unit cell
+framework.atoms  # list of atoms
+framework.fractional_coords  # array of corresponding ractional coords
+
+framework.chemicalformula()  # get chemical formula
+framework.crystladensity()  # get crystal density (kg/m3)
+```
+
+### 'data/forcefields/' for force field
 
 The force field is the model and parameters used to describe the potential energy of the adsorbate molecule with the atoms of the crystal structure. PEGrid models the interaction between the adsorbate *a* and crystal structure atom type *i* a distance *r* apart with the Lennard-Jones potential:
 
@@ -37,9 +56,45 @@ The pure *i-i* and *a-a* Lennard-Jones interaction parameters must be stored in 
 
 We mimic an infinite crystal by applying periodic boundary conditions. This is enabled by approximating interactions beyond a cutoff radius to be zero. The cutoff radius, technically part of the force field, is provided as an argument in the functions of PEGrid.
 
-#### Atomic masses file (.csv)
+You can play with a forcefield object:
 
-In order to calculate the crystal density of the framework, PEGrid stores the atomic masses (units: amu) of the atoms in `data/atomicmasses.csv`.
+```Julia
+forcefield = Forcefield("UFF", "Xe")  # construct forcefield for Xe using UFF
+forcefield.atoms  # atoms in FF that interact with Xe
+forcefield.epsilon  # corresponding Lennard-Jones epsilons
+forcefield.sigma  # corresponding Lennard-Jones sigmas
+```
+
+### 'data/atomicmasses.csv' for storing atomic masses of the [psuedo-]atoms 
+
+In order to calculate the crystal density of the framework and center of mass of a complicated adsorbate molecule, PEGrid stores the atomic masses (units: amu) of the atoms in `data/atomicmasses.csv`. We say "pseudo-atom" because e.g. two CH<sub>2</sub> beads are used to model ethene.
+
+### 'data/adsorbates/' for adsorbate molecule information
+
+As an example, ethene, which we name 'CH2CH2' consists of two 'CH2' beads with a bond length of 1.33 A:
+
+    Adsorbate: CH2CH2
+    Number_of_beads: 2
+    Bead_names: CH2 CH2
+    Bead_positions.csv:
+    x,y,z
+    0,0,0
+    1.33,0,0
+
+The adsorbate molecule will automatically be translated to coordinates such that the origin is at the center of mass. You can play with your adsorbate by:
+
+```Julia
+ethene = Adsorbate("CH2CH2")
+ethene.nbeads # get number of beads
+ethene.get_MW() # get molecular weight
+ethene.bead_xyz # look at Cartesian positions of beads
+ethene.translate([1.0, 1.0, 1.0])  # translate adsorbate by Cartesian vector [1.0, 1.0, 1.0]
+ethene.set_origin_at_COM()  # translate back to center of mass
+ethene.perform_uniform_random_rotation()  # perform a uniformly rotation of the adsorbate
+```
+## Requirements
+
+PEGrid requires the `DataFrames` and `Optim` packages in Julia. To install, type in Julia: `Pkg.add("DataFrames")`.
 
 ## How to write the grid
 
@@ -85,7 +140,6 @@ You should observe a significant speed up in comparison to the serial implementa
 ## How to visualize potential energy contours with the grid
 
 Use the VisIt visualization tool. Generate an .xyz file of the crystal structure, a .vtk file that represents the unit cell boundary, and a .cube file of the energy grid (all can be done using PEGrid). These will be stored in `$HOME/PEGrid_output`. You can generate a VisIt script to make a visualization of the `CH4` grid for `IRMOF-1` using PEGrid by calling:
-    
 
 ```Julia
 include("src/generate_visit_script.jl")
@@ -164,17 +218,18 @@ The .vtk file `${yourstructurename}.vtk` will be written in the working director
 
 #### Computing the potential energy of an adsorbate at an array of [fractional] points
 
-e.g., to compute the potential energy of adsorbate `CH4` in crystal structure `IRMOF-1` using Lennard-Jones parameters in `data/forcefield/UFF.csv` with a cutoff radius of 12.5 at the *fractional* coordinates `(x_f, y_f, z_f)`, (`x_f`, `y_f`, and `z_f` can be Array{Float64}'s), use the Julia code:
+e.g., to compute the potential energy of adsorbate `CH4` in crystal structure `IRMOF-1` using Lennard-Jones parameters in `data/forcefield/UFF.csv` with a cutoff radius of 12.5 at a set of *fractional* coordinates `(x_f, y_f, z_f)`:
 
 ```Julia
 include("src/energyutils.jl")
 
-# array of fractional grid points at which we seek the potential energies
-x_f = linspace(0, 1)
-y_f = linspace(0, 1)
-z_f = linspace(0, 1)
+fractional_coord = [.2, .1, .5]
+E = E_vdw_at_points("IRMOF-1", "UFF", "CH4", fractional_coord, cutoff=12.5)
+# returns energy at fractional coordinate [.2, .1, .5]
 
-E = E_vdw_at_point("IRMOF-1", "UFF", "CH4", x_f, y_f, z_f, cutoff=12.5)  # returns array of energies corresponding to these points
+fractional_coords = [.2 .3; .1 .4; .5 .8]
+E = E_vdw_at_points("IRMOF-1", "UFF", "CH4", fractional_coords, cutoff=12.5)
+# returns array of energies corresponding to fractional points [.2, .1, .5] and [.3, .4, .8]
 ```
 
 This will return the energy of the adsorbate at that fractional coordinate (units: Kelvin).
