@@ -1,0 +1,7 @@
+Adsorbate: CH2CH2
+Number_of_beads: 2
+Bead_names: CH2 CH2
+Bead_positions.csv:
+x,y,z
+0,0,0
+1.33,0,0
