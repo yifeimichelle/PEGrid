@@ -179,6 +179,8 @@ The last argument gives the aim of widths in A for each bin along the a, b, and 
 
 This will write a .cube file of the adsorbate probability density in `$home/PEGrid_ouptut/$structurename_adsorbate_probability_distn.cube`.
 
+For adsorbates that are not Lennard Jones spheres, we assume that the center of mass is present in the .xyz file.
+
 #### Replicating a .cssr to an .xyz file
 
 An .xyz file contains a list of atoms in the crystal structure file, their identities, and their positions in Cartesian coordinates. An .xyz file is useful for visualizing the atoms of the crystal structure. PEGrid can replicate the unit cell of the crystal in each direction, so that the 'home' unit cell is in the center, and output a .xyz of the replicated crystal structure file.
