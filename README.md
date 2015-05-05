@@ -7,13 +7,13 @@ This Julia package is for analyzing nanoporous materials for gas adsorption usin
 
 <a href="url"><img src="cover.jpeg" align="middle" height="500" width="675" ></a>
 
-* Computing the potential energy of an adsorbate at a particular position/configuration in the structure
+* Compute the potential energy of an adsorbate at a particular position/configuration in the structure (does Boltzmann-weighted rotations of molecules that are not Lennard-Jones spheres)
 
 * Compute Henry constants
 
 * Given snapshots of adsorbate positions from a Grand-canonical Monte Carlo simulation, PEGrid can bin adsorbate positions and store them in volume files for visualizing probability density functions of adsorbate locations.
 
-* Replicating the unit cell of a .cssr file
+* Replicate the unit cell of a .cssr file to an .xyz for visualization
 
 * Compute the crystal density and irreducible chemical formula of a nanoporous material
 
@@ -29,6 +29,7 @@ Put the crystal structure files in .cssr format here. The popular .cif format ca
 You can play with a framework object by:
 
 ```Julia
+include("src/framework.jl")
 framework = Framework("IRMOF-1")  # load IRMOF-1.cssr
 framework.a  # length of crystal axis a
 framework.alpha  # angle in unit cell
@@ -59,6 +60,7 @@ We mimic an infinite crystal by applying periodic boundary conditions. This is e
 You can play with a forcefield object:
 
 ```Julia
+include("src/forcefield.jl")
 forcefield = Forcefield("UFF", "Xe")  # construct forcefield for Xe using UFF
 forcefield.atoms  # atoms in FF that interact with Xe
 forcefield.epsilon  # corresponding Lennard-Jones epsilons
@@ -84,6 +86,7 @@ As an example, ethene, which we name 'CH2CH2' consists of two 'CH2' beads with a
 The adsorbate molecule will automatically be translated to coordinates such that the origin is at the center of mass, so do not fret about the non-uniqueness of coordinate definitions. You can play with your adsorbate by:
 
 ```Julia
+include("src/adsorbates.jl")
 ethene = Adsorbate("CH2CH2")
 ethene.nbeads # get number of beads
 ethene.get_MW() # get molecular weight
@@ -117,6 +120,13 @@ writegrid("CH4", "IRMOF-1", "UFF", gridspacing=1.0, cutoff=12.5)
 * `IRMOF-1`: corresponds to crystal structure file data/structures/IRMOF-1.cssr
 
 The code will print off the progress of the grid writing every 10%. Be patient, as computing fine grids and/or large unit cells lead to long computation times.
+
+For a molecule that is not a Lennard-Jones sphere, for example ethene, we compute the energy grid as follows. For a given grid point, we fix the center of mass of ethene. Then, we take uniform random samples of the rotations and record the Boltzmann-weighted energy. Thus, for molecules where the number of beads is greater than 1, we need to specify the temperature. You can also tune the number of samples of rotations.
+
+```Julia
+include("src/energygrid.jl")
+writegrid("CH4", "IRMOF-1", "UFF", gridspacing=1.0, cutoff=12.5, temperature=298.0, num_rotation_samples=1000)
+```
 
 ### Parallel implementation
 
@@ -224,15 +234,21 @@ e.g., to compute the potential energy of adsorbate `CH4` in crystal structure `I
 include("src/energyutils.jl")
 
 fractional_coord = [.2, .1, .5]
-E = E_vdw_at_points("IRMOF-1", "UFF", "CH4", fractional_coord, cutoff=12.5)
+E = energy_of_adsorbate("CH4", fractional_coord, "IRMOF-1", "UFF", cutoff=12.5)
 # returns energy at fractional coordinate [.2, .1, .5]
 
 fractional_coords = [.2 .3; .1 .4; .5 .8]
-E = E_vdw_at_points("IRMOF-1", "UFF", "CH4", fractional_coords, cutoff=12.5)
+E = energy_of_adsorbate("CH4", fractional_coords, "IRMOF-1", "UFF", cutoff=12.5)
 # returns array of energies corresponding to fractional points [.2, .1, .5] and [.3, .4, .8]
 ```
 
 This will return the energy of the adsorbate at that fractional coordinate (units: Kelvin).
+
+For molecules that are not Lennard-Jones spheres, PEGrid will record the Boltzmann weighted energy of an adsorbate whose center of mass is at the fractional coordinate we feed to `energy_of_adsorbate`, so we need to provide the temperature:
+
+```Julia
+E_CH2CH2 = energy_of_adsorbate("CH2CH2", fractional_coords, "IRMOF-1", "UFF", cutoff=12.5, num_rotation_samples=1000, temperature=298.0)
+```
 
 - [ ] include function to convert from Cartesian to fractional for this function
 
