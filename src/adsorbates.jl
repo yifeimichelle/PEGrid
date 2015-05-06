@@ -8,11 +8,13 @@ function uniform_unit_vector_on_sphere()
     """
     Generate a uniformly distributed point on a sphere
     """
+    mag_v = 0.0
     v = zeros(3)
-    while norm(v) < 0.0001
+    while mag_v < 0.0001
         v = [randn(), randn(), randn()]
+        mag_v = norm(v)
     end
-    return v / norm(v)
+    return v / mag_v
 end
 
 type Adsorbate
@@ -92,8 +94,9 @@ type Adsorbate
             R[:, 2] = m - dot(m, R[:, 1]) * R[:, 1]  # subtract of component along col1 so it is orthogonal
             R[:, 2] = R[:, 2] / norm(R[:, 2])
             R[:, 3] = cross(R[:, 1], R[:, 2])  # gives orthogonal vector to first two
-
-            adsorbate.bead_xyz = R * adsorbate.bead_xyz
+            
+            # change rotate all beads
+            adsorbate.bead_xyz = adsorbate.bead_xyz + R * adsorbate.bead_xyz_COM_origin
         end
 
         adsorbate.get_MW = function()
@@ -149,13 +152,13 @@ type Adsorbate
             Set bead_xyz at the center of mass
             """
             adsorbate.bead_xyz = adsorbate.bead_xyz_COM_origin
-            eps = .00001
-            assert(adsorbate._get_COM()[1] < eps)
-            assert(adsorbate._get_COM()[2] < eps)
-            assert(adsorbate._get_COM()[3] < eps)
-            assert(adsorbate._get_COM()[1] > -eps)
-            assert(adsorbate._get_COM()[2] > -eps)
-            assert(adsorbate._get_COM()[3] > -eps)
+ #             eps = .00001
+ #             assert(adsorbate._get_COM()[1] < eps)
+ #             assert(adsorbate._get_COM()[2] < eps)
+ #             assert(adsorbate._get_COM()[3] < eps)
+ #             assert(adsorbate._get_COM()[1] > -eps)
+ #             assert(adsorbate._get_COM()[2] > -eps)
+ #             assert(adsorbate._get_COM()[3] > -eps)
         end
 
         adsorbate.set_origin_at_COM()
