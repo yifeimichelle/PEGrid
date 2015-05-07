@@ -164,31 +164,42 @@ function energy_of_adsorbate(adsorbatename::String,
                         forcefieldname::String;
                         cutoff::Float64=12.5,
                         num_rotation_samples::Int=500,
-                        temperature::Float64=-1.0)
+                        temperature::Float64=-1.0,
+                        verbose_flag::Bool=false)
     """
     Compute energy of adsorbate
 
     :returns Array{Float64} of potential energies at each point in Kelvin (well, same units as \epsilon given in forcefield)
     """
-    @printf("Constructing adsorbate %s...\n", adsorbatename)
+    if (verbose_flag)
+        @printf("Constructing adsorbate %s...\n", adsorbatename)
+    end
     adsorbate = Adsorbate(adsorbatename)
     if (adsorbate.nbeads > 1) & (temperature == -1.0)
         error("Need to input temperature (in K) for adsorbate with >1 beads for Boltmann weighting of orientations (rotations)")
     end
 
-    @printf("Constructing framework object for %s...\n", structurename)
+    if (verbose_flag)
+        @printf("Constructing framework object for %s...\n", structurename)
+    end
     framework = Framework(structurename)
 
-    @printf("Constructing forcefield(s) for bead(s) in %s...\n", forcefieldname)
+    if (verbose_flag)
+        @printf("Constructing forcefield(s) for bead(s) in %s...\n", forcefieldname)
+    end
     forcefields = Forcefield[]  # list of forcefields
     for b = 1:adsorbate.nbeads
-        @printf("\tBead %s...\n", adsorbate.bead_names[b])
+        if (verbose_flag)
+            @printf("\tBead %s...\n", adsorbate.bead_names[b])
+        end
         push!(forcefields, Forcefield(forcefieldname, adsorbate.bead_names[b], cutoff=cutoff))
     end
     
     # get unit cell replication factors for periodic BCs
     rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
-    @printf("\tUnit cell replication factors for cutoff radius %f A: %d x %d x %d\n", cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
+    if (verbose_flag)
+        @printf("\tUnit cell replication factors for cutoff radius %f A: %d x %d x %d\n", cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
+    end
     
     # get position array and epsilons/sigmas for easy computation
     epsilons, sigmas = _generate_epsilons_sigmas(framework, forcefields)
@@ -198,14 +209,15 @@ function energy_of_adsorbate(adsorbatename::String,
     end
     npoints = (length(fractional_translations) != 3) ? size(fractional_translations)[2] : 1
 
-    @printf("\tComputing potential energy at %d points\n", npoints)
+    if (verbose_flag)
+        @printf("\tComputing potential energy at %d points\n", npoints)
+    end
 
     E = zeros(npoints)  # pre-allocate array of energies
 
     for i = 1:npoints
-        # translate adsorbate by vector:
-        xyz_translation = framework.f_to_cartesian_mtrx * fractional_translations[:, i]
-        adsorbate.translate(xyz_translation)
+        # translate adsorbate by vector in cartesian space:
+        adsorbate.translate_to(framework.f_to_cartesian_mtrx * fractional_translations[:, i])
 
         # compute energy
         if adsorbate.nbeads == 1  # no need for sampling rotations
@@ -232,9 +244,6 @@ function energy_of_adsorbate(adsorbatename::String,
             end
             E[i] = weighted_energy_sum / boltzmann_weight_sum
         end
-
-        # translate back to origin
-        adsorbate.set_origin_at_COM()
     end
     
     return E  # in (Kelvin)
