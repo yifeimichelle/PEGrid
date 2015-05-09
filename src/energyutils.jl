@@ -249,54 +249,81 @@ function energy_of_adsorbate(adsorbatename::String,
     return E  # in (Kelvin)
 end
 
- # function find_min_energy_position(structurename::String, 
- #                                   forcefieldname::String, 
- #                                   adsorbatename::String,
- #                                   x_f_start::Array{Float64};
- #                                   cutoff::Float64=12.5)
- #     """
- #     Find minimum energy position of adsorbate in framework
- #     """
- #     @printf("Constructing framework object for %s...\n", structurename)
- #     framework = Framework(structurename)
- # 
- #     @printf("Constructing forcefield object for %s...\n", forcefieldname)
- #     forcefield = Forcefield(forcefieldname, adsorbate, cutoff=cutoff)
- # 
- #     @printf("Constructing adsorbate %s...\n", adsorbatename)
- #     adsorbate = Adsorbate(adsorbatename)
- #     if adsorbate.nbeads > 1
- #         error("Sorry not implemented for >1 beads yet...")
- #     end
- #     
- #     # get unit cell replication factors for periodic BCs
- #     rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
- #     @printf("\tUnit cell replication factors for cutoff radius %f A: %d x %d x %d\n", cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
- #     
- #     # get epsilons/sigmas for easy computation
- #     epsilons, sigmas = _generate_epsilons_sigmas(framework, [forcefield])
- # 
- #     # define energy as a function of fractional coord
- #     E(x) = _E_vdw_at_point!(x,
- #                 epsilons, sigmas, 
- #                 framework,
- #                 rep_factors, cutoff)
- #     
- #     res = optimize(E, x_f_start, method=:nelder_mead)
- #     @printf("Minimum E= %f at (%f, %f, %f)\n", res.f_minimum * 8.314/1000.0, res.minimum[1], res.minimum[2], res.minimum[3])
- #     
- #     # If optimization routine found a point outside of the home unit cell, try a new starting point
- #     while ((sum(res.minimum .< [-0.000001, -0.00001, -0.000001]) != 0) | (sum(res.minimum .> [1.00001, 1.000001, 1.000010]) != 0))
- #         for i = 1:3
- #             x_f_start[i] = mod(res.minimum[i], 1.0)
- #             x_f_start[i] += 0.1 * rand()
- #         end
- #         
- #         @printf("Fractional coords went outside of unit box; trying another starting point (%f, %f, %f)\n", x_f_start[1], x_f_start[2], x_f_start[3])
- #         res = optimize(E, x_f_start, method=:nelder_mead)
- #  #         error("Fractional coords went outside of unit box; choose better starting point\n")
- #         # bring into home unit cell (Fractional coords in [0,1]) and perturb randomly
- #     end
- # 
- #     return res.f_minimum * 8.314 / 1000.0, res.minimum  # minE, x_min
- # end
+function find_min_energy_position(structurename::String, 
+                                  forcefieldname::String, 
+                                  adsorbatename::String,
+                                  x_f_start::Array{Float64};
+                                  num_rotation_samples::Int=200,
+                                  temperature::Float64=-1.0,
+                                  cutoff::Float64=12.5)
+    """
+    Find minimum energy position of adsorbate in framework
+    """
+    @printf("Constructing framework object for %s...\n", structurename)
+    framework = Framework(structurename)
+
+    @printf("Constructing adsorbate %s...\n", adsorbatename)
+    adsorbate = Adsorbate(adsorbatename)
+    if (adsorbate.nbeads > 1) & (temperature == -1.0)
+        error("Need to provide temperature to calculate energy with different rotations\n")
+    end
+    
+    @printf("Constructing forcefield object for %s...\n", forcefieldname)
+    forcefields = Forcefield[]  # list of forcefields
+    for b = 1:adsorbate.nbeads
+        @printf("\tBead %s...\n", adsorbate.bead_names[b])
+        push!(forcefields, Forcefield(forcefieldname, adsorbate.bead_names[b], cutoff=cutoff))
+    end
+    
+    # get unit cell replication factors for periodic BCs
+    rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
+    @printf("\tUnit cell replication factors for cutoff radius %f A: %d x %d x %d\n", cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
+    
+    # get epsilons/sigmas for easy computation
+    epsilons, sigmas = _generate_epsilons_sigmas(framework, forcefields)
+    
+    if adsorbate.nbeads == 1  # no need to perform rotations
+        function E(fractional_coord::Array{Float64})
+            """
+            Energy (Boltzmann weighted at pos x
+            """
+            adsorbate.translate_to(framework.f_to_cartesian_mtrx * fractional_coord)
+            return _energy_of_adsorbate!(adsorbate, epsilons, sigmas, framework, rep_factors, cutoff) 
+        end
+    else  # rotations necessary!
+        function E(fractional_coord::Array{Float64})
+            """
+            Energy (Boltzmann weighted at pos x
+            """
+            adsorbate.translate_to(framework.f_to_cartesian_mtrx * fractional_coord)
+            boltzmann_weight_sum = 0.0
+            weighted_energy_sum = 0.0
+            for k = 1:num_rotation_samples
+                adsorbate.perform_uniform_random_rotation()
+                _energy = _energy_of_adsorbate!(adsorbate, epsilons, sigmas, framework, rep_factors, cutoff) 
+                boltzmann_weight = exp(-_energy / temperature)
+                boltzmann_weight_sum += boltzmann_weight
+                weighted_energy_sum += boltzmann_weight * _energy
+            end
+            return weighted_energy_sum / boltzmann_weight_sum
+        end
+    end
+    
+    res = optimize(E, x_f_start, method=:nelder_mead)
+    
+    # If optimization routine found a point outside of the home unit cell, try a new starting point
+    while ((sum(res.minimum .< [-0.000001, -0.00001, -0.000001]) != 0) | (sum(res.minimum .> [1.00001, 1.000001, 1.000010]) != 0))
+        for i = 1:3
+            x_f_start[i] = mod(res.minimum[i], 1.0)
+            x_f_start[i] += 0.05 * rand()
+        end
+        
+        @printf("Fractional coords went outside of unit box; trying another starting point (%f, %f, %f)\n", x_f_start[1], x_f_start[2], x_f_start[3])
+        res = optimize(E, x_f_start, method=:nelder_mead)
+ #         error("Fractional coords went outside of unit box; choose better starting point\n")
+        # bring into home unit cell (Fractional coords in [0,1]) and perturb randomly
+    end
+    @printf("Minimum E= %f at (%f, %f, %f)\n", res.f_minimum * 8.314/1000.0, res.minimum[1], res.minimum[2], res.minimum[3])
+
+    return res.f_minimum * 8.314 / 1000.0, res.minimum  # minE, x_min
+end
