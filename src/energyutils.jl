@@ -327,3 +327,47 @@ function find_min_energy_position(structurename::String,
 
     return res.f_minimum * 8.314 / 1000.0, res.minimum  # minE, x_min
 end
+
+function get_optimal_rotation(adsorbate::Adsorbate, 
+                              structurename::String, 
+                              forcefieldname::String; 
+                              num_rotation_samples::Int=500, 
+                              cutoff::Float64=12.5)
+    """
+    Explore different rotations of the adsorbate and record the configuration of the one with the lowest energy
+    """
+    if (adsorbate.nbeads == 1)
+        error("Dude, don't need rotations for a spherical adsorbate\n")
+    end
+
+    framework = Framework(structurename)
+    
+    @printf("Constructing forcefield object for %s...\n", forcefieldname)
+    forcefields = Forcefield[]  # list of forcefields
+    for b = 1:adsorbate.nbeads
+        @printf("\tBead %s...\n", adsorbate.bead_names[b])
+        push!(forcefields, Forcefield(forcefieldname, adsorbate.bead_names[b], cutoff=cutoff))
+    end
+    
+    # get unit cell replication factors for periodic BCs
+    rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
+    
+    # get epsilons/sigmas for easy computation
+    epsilons, sigmas = _generate_epsilons_sigmas(framework, forcefields)
+    
+    E_min = _energy_of_adsorbate!(adsorbate, epsilons, sigmas, framework, rep_factors, cutoff)
+    opt_bead_xyz = adsorbate.bead_xyz
+    for i = 1:num_rotation_samples
+        adsorbate.perform_uniform_random_rotation()
+        E = _energy_of_adsorbate!(adsorbate, epsilons, sigmas, framework, rep_factors, cutoff) 
+        if E < E_min
+            E_min = E
+            opt_bead_xyz = adsorbate.bead_xyz
+            print(adsorbate.bead_xyz)
+        end
+    end
+
+    adsorbate.bead_xyz = opt_bead_xyz
+    
+    return adsorbate, E_min
+end
