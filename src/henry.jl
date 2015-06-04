@@ -7,12 +7,15 @@ include("energyutils.jl")
 function henry(adsorbatename::String, structurename::String, forcefieldname::String, temperature::Float64; insertions_per_A3::Int=750, cutoff::Float64=12.5)
     """
     Compute Henry constant and ensemble average energy of an adsorbate inside a structure via Widom insertions
+
+    Keep track of lowest energy configuration
     """
     @printf("Constructing framework object for %s...\n", structurename)
     framework = Framework(structurename)
     
     @printf("Constructing adsorbate %s...\n", adsorbatename)
     adsorbate = Adsorbate(adsorbatename)
+    adsorbate_min_config = deepcopy(adsorbate)  # preallocate
     if (adsorbate.nbeads > 1) & (temperature == -1.0)
         error("Provide temperature for Boltzmann weighted rotations, nbeads > 1 in adsorbate.")
     end
@@ -34,13 +37,16 @@ function henry(adsorbatename::String, structurename::String, forcefieldname::Str
     num_insertions = convert(Int, ceil(framework.v_unitcell * insertions_per_A3))
     @printf("Performing %d Widom insertions...\n", num_insertions)
 
-    boltzmann_factor_sum = 0.0
-    boltzmann_weighted_energy_sum = 0.0
+    # for keeping track of minimum energy
+    E_min = Inf  # pre-allocate E_min as inf
+
+    boltzmann_factor_sum = 0.0  # \sum_i e^{-\beta E_i}
+    boltzmann_weighted_energy_sum = 0.0  # \sum_i E_i e^{-\beta E_i}
     for i = 1:num_insertions
         xf_insert = [rand(), rand(), rand()]
 
         # translate adsorbate to this point
-        adsorbate.translate(framework.f_to_cartesian_mtrx * xf_insert)
+        adsorbate.translate_to(framework.f_to_cartesian_mtrx * xf_insert)
         # select a random orientiation if applicable
         if adsorbate.nbeads > 1
             adsorbate.perform_uniform_random_rotation()
@@ -53,16 +59,23 @@ function henry(adsorbatename::String, structurename::String, forcefieldname::Str
                                     framework,
                                     rep_factors, 
                                     cutoff)
+        
+        # record for keeping track of avg's for K_H
         boltzmann_weight = exp(-_energy / temperature)
-        boltzmann_factor_sum += boltzmann_weight
-        boltzmann_weighted_energy_sum += boltzmann_weight * _energy
+        boltzmann_factor_sum += boltzmann_weight 
+        boltzmann_weighted_energy_sum += boltzmann_weight * _energy * 8.314 / 1000.0
 
-        # translate adsorbate back to COM
-        adsorbate.set_origin_at_COM()
+        # for calculating min energy pos
+        if (_energy < E_min)
+            E_min = _energy  # update minimum energy
+            adsorbate_min_config = deepcopy(adsorbate)
+        end
     end
     
     KH = boltzmann_factor_sum / num_insertions / 8.314 / temperature
     avg_E = boltzmann_weighted_energy_sum / boltzmann_factor_sum
     @printf("%s Henry constant in %s at %.1f K = %f (mol/(m3-Pa))\n", adsorbatename, structurename, temperature, KH)
-    @printf("\t<E> = %f K = %f kJ/mol\n", avg_E, avg_E * 8.314 / 1000.0)
+    @printf("\t<E> %f kJ/mol = %f K\n", avg_E, avg_E / 8.314 * 1000.0)
+    @printf("Minimum energy encountered = %f kJ/mol\n", E_min * 8.314 / 1000.0)
+    return KH, avg_E, adsorbate_min_config 
 end

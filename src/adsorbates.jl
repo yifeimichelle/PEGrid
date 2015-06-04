@@ -8,13 +8,11 @@ function uniform_unit_vector_on_sphere()
     """
     Generate a uniformly distributed point on a sphere
     """
-    mag_v = 0.0
     v = zeros(3)
-    while mag_v < 0.0001
+    while norm(v) < 0.0001
         v = [randn(), randn(), randn()]
-        mag_v = norm(v)
     end
-    return v / mag_v
+    return v / norm(v)
 end
 
 type Adsorbate
@@ -24,16 +22,18 @@ type Adsorbate
 
     # 3 by nbeads array with bead_xyz, Cartesian coords of bead
     # convention: first bead is 0, 0, 0
-    bead_xyz::Array{Float64}  # CARTESIAN (so irrespective of framework)
+    bead_xyz::Array{Float64}  # CARTESIAN (so irrespective of framework). shape = (3, nbeads)
     bead_xyz_COM_origin::Array{Float64}  # Cartesian coords where origin is center of mass
     bead_names::Array{String}  # corresponds to name in force field
+    COM::Array{Float64}  # store center of mass so we don't need to compute it each time
 
-    translate::Function  # translate adsorbate by Cartesian vector x
+    translate_to::Function  # translate adsorbate by Cartesian vector x
     perform_uniform_random_rotation::Function  # perform a rotation of the adsorbate
+    write_to_xyz::Function  # write adsorbate positions to .xyz
 
     get_MW::Function
     _get_COM::Function
-    set_origin_at_COM::Function  # set origin of coords at center of mass
+    translate_COM_to_origin::Function  # set origin of coords at center of mass
 
     function Adsorbate(name::String)
         """
@@ -74,30 +74,14 @@ type Adsorbate
             error("First bead must be at 0,0,0 by convention")
         end
 
-        adsorbate.translate = function (x::Array{Float64})
+        adsorbate.translate_to = function (x::Array{Float64})
             """
-            Translate adsorbate by Cartesian vector x
+            Translate adsorbate from origin (at COM) to Cartesian vector x
             (function of self)
             """
-            adsorbate.bead_xyz = broadcast(+, adsorbate.bead_xyz, x)
+            adsorbate.bead_xyz = broadcast(+, adsorbate.bead_xyz_COM_origin, x)
+            adsorbate.COM = x  # update center of mass
         end 
-
-        adsorbate.perform_uniform_random_rotation = function ()
-            """
-            Perform a uniform random rotation of adsorbate (updating bead_xyz)
-            # see http://www.mech.utah.edu/~brannon/public/rotation.pdf pg 106
-            """
-            # build rotation matrix R
-            R = zeros(3,3)
-            R[:, 1] = uniform_unit_vector_on_sphere()
-            m = uniform_unit_vector_on_sphere()
-            R[:, 2] = m - dot(m, R[:, 1]) * R[:, 1]  # subtract of component along col1 so it is orthogonal
-            R[:, 2] = R[:, 2] / norm(R[:, 2])
-            R[:, 3] = cross(R[:, 1], R[:, 2])  # gives orthogonal vector to first two
-            
-            # change rotate all beads
-            adsorbate.bead_xyz = adsorbate.bead_xyz + R * adsorbate.bead_xyz_COM_origin
-        end
 
         adsorbate.get_MW = function()
             """
@@ -147,7 +131,7 @@ type Adsorbate
         # store bead coords with COM at origin as an attribute by subtracting COM
         adsorbate.bead_xyz_COM_origin = broadcast(-, adsorbate.bead_xyz, adsorbate._get_COM())
 
-        adsorbate.set_origin_at_COM = function()
+        adsorbate.translate_COM_to_origin = function()
             """
             Set bead_xyz at the center of mass
             """
@@ -160,8 +144,40 @@ type Adsorbate
  #             assert(adsorbate._get_COM()[2] > -eps)
  #             assert(adsorbate._get_COM()[3] > -eps)
         end
+        
+        adsorbate.perform_uniform_random_rotation = function ()
+            """
+            Perform a uniform random rotation of adsorbate (updating bead_xyz)
+            Keep current center of mass
+            # see http://www.mech.utah.edu/~brannon/public/rotation.pdf pg 106
+            """
+            # build rotation matrix R
+            R = zeros(3,3)
+            R[:, 1] = uniform_unit_vector_on_sphere()
+            m = uniform_unit_vector_on_sphere()
+            R[:, 2] = m - dot(m, R[:, 1]) * R[:, 1]  # subtract of component along col1 so it is orthogonal
+            R[:, 2] = R[:, 2] / norm(R[:, 2])
+            R[:, 3] = cross(R[:, 1], R[:, 2])  # gives orthogonal vector to first two
+            
+            adsorbate.bead_xyz = broadcast(+,  R * adsorbate.bead_xyz_COM_origin, adsorbate.COM)
+        end
 
-        adsorbate.set_origin_at_COM()
+        adsorbate.write_to_xyz = function (filename::String)
+            """
+            Write adsorbate to .xyz file
+            """
+            filename = filename * ".xyz"
+
+            f = open(filename, "w")
+            write(f, @sprintf("%d\n\n", adsorbate.nbeads))
+            for i = 1:adsorbate.nbeads
+                write(f, @sprintf("%s %f %f %f\n", adsorbate.bead_names[i], adsorbate.bead_xyz[1, i], adsorbate.bead_xyz[2, i], adsorbate.bead_xyz[3, i]))
+            end
+            close(f)
+        end
+
+        adsorbate.translate_COM_to_origin()
+        adsorbate.COM = adsorbate._get_COM()
 
         return adsorbate
     end
