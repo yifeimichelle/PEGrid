@@ -4,26 +4,35 @@
 ###
 include("energyutils.jl")
 
-function henry(adsorbatename::String, structurename::String, forcefieldname::String, temperature::Float64; insertions_per_A3::Int=750, cutoff::Float64=12.5)
+function henry(adsorbatename::String, structurename::String, forcefieldname::String, temperature::Float64; insertions_per_A3::Int=750, cutoff::Float64=12.5, verboseflag::Bool=false)
+f
     """
     Compute Henry constant and ensemble average energy of an adsorbate inside a structure via Widom insertions
 
     Keep track of lowest energy configuration
     """
-    @printf("Constructing framework object for %s...\n", structurename)
+    if verboseflag
+        @printf("Constructing framework object for %s...\n", structurename)
+    end
     framework = Framework(structurename)
     
-    @printf("Constructing adsorbate %s...\n", adsorbatename)
+    if verboseflag
+        @printf("Constructing adsorbate %s...\n", adsorbatename)
+    end
     adsorbate = Adsorbate(adsorbatename)
     adsorbate_min_config = deepcopy(adsorbate)  # preallocate
     if (adsorbate.nbeads > 1) & (temperature == -1.0)
         error("Provide temperature for Boltzmann weighted rotations, nbeads > 1 in adsorbate.")
     end
-
-    @printf("Constructing forcefield(s) for bead(s) in %s...\n", forcefieldname)
+    
+    if verboseflag
+        @printf("Constructing forcefield(s) for bead(s) in %s...\n", forcefieldname)
+    end
     forcefields = Forcefield[]  # list of forcefields
     for b = 1:adsorbate.nbeads
-        @printf("\tBead %s...\n", adsorbate.bead_names[b])
+        if verboseflag
+            @printf("\tBead %s...\n", adsorbate.bead_names[b])
+        end
         push!(forcefields, Forcefield(forcefieldname, adsorbate.bead_names[b], cutoff=cutoff))
     end
     
@@ -32,10 +41,14 @@ function henry(adsorbatename::String, structurename::String, forcefieldname::Str
     
     # get unit cell replication factors for periodic BCs
     rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
-    @printf("Unit cell replication factors for LJ cutoff of %.2f A: %d by %d by %d\n", cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
+    if verboseflag
+        @printf("Unit cell replication factors for LJ cutoff of %.2f A: %d by %d by %d\n", cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
+    end
     
     num_insertions = convert(Int, ceil(framework.v_unitcell * insertions_per_A3))
-    @printf("Performing %d Widom insertions...\n", num_insertions)
+    if verboseflag
+        @printf("Performing %d Widom insertions...\n", num_insertions)
+    end
 
     # for keeping track of minimum energy
     E_min = Inf  # pre-allocate E_min as inf
