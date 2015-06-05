@@ -4,8 +4,14 @@
 ###
 include("energyutils.jl")
 
-function henry(adsorbatename::String, structurename::String, forcefieldname::String, temperature::Float64; insertions_per_A3::Int=750, cutoff::Float64=12.5, verboseflag::Bool=false)
-f
+function henry(adsorbatename::String, 
+               structurename::String, 
+               forcefieldname::String, 
+               temperature::Float64; 
+               insertions_per_A3::Int=750, 
+               cutoff::Float64=12.5, 
+               verboseflag::Bool=false, 
+               write_to_file=false)
     """
     Compute Henry constant and ensemble average energy of an adsorbate inside a structure via Widom insertions
 
@@ -76,7 +82,7 @@ f
         # record for keeping track of avg's for K_H
         boltzmann_weight = exp(-_energy / temperature)
         boltzmann_factor_sum += boltzmann_weight 
-        boltzmann_weighted_energy_sum += boltzmann_weight * _energy * 8.314 / 1000.0
+        boltzmann_weighted_energy_sum += boltzmann_weight * _energy 
 
         # for calculating min energy pos
         if (_energy < E_min)
@@ -88,7 +94,21 @@ f
     KH = boltzmann_factor_sum / num_insertions / 8.314 / temperature
     avg_E = boltzmann_weighted_energy_sum / boltzmann_factor_sum
     @printf("%s Henry constant in %s at %.1f K = %f (mol/(m3-Pa))\n", adsorbatename, structurename, temperature, KH)
-    @printf("\t<E> %f kJ/mol = %f K\n", avg_E, avg_E / 8.314 * 1000.0)
+    @printf("\t<E> %f K = %f kJ/mol\n", avg_E, avg_E * 8.314 / 1000.0)
     @printf("Minimum energy encountered = %f kJ/mol\n", E_min * 8.314 / 1000.0)
+
+    # Write to file
+    if write_to_file
+        if ! isdir(homedir() * "/PEGrid_output/henries")
+           mkdir(homedir() * "/PEGrid_output/henries") 
+        end
+        f = open(homedir() * "/PEGrid_output/henries/" * structurename * "_" * adsorbatename * "_henry.txt", "w")
+        @printf(f, "T = %f K\n", temperature)
+        @printf(f, "Framework density (kg/m3) = %f\n", framework.crystaldensity())
+        @printf(f, "<E> (kJ/mol) = %f\n", avg_E * 8.314 / 1000)
+        @printf(f, "Min. E = %f kJ/mol\n", E_min * 8.314 / 1000.0)
+        @printf(f, "KH, %s (mol/m3-Pa) = %e\n", adsorbatename, KH)
+        close(f)
+    end
     return KH, avg_E, adsorbate_min_config 
 end
