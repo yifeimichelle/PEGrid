@@ -180,6 +180,39 @@ type Framework
         return framework
     end  # end crystal density
 end  # end Framework type
+
+function shift_unit_cell_write_cssr(frameworkname::String, xf_shift::Array{Float64})
+    """
+    Shift unit cell by fractional amount and write to a new .cssr
+    Shift by fractional amount xf_shift = [.25, .25, .25] for example
+    Saves to data/structures/frameworkname_shifted.cssr
+    """
+    framework = Framework(frameworkname)
+    @assert(sum(xf_shift .< 0.0) == 0)
+    @assert(sum(xf_shift .> 1.0) == 0)
+
+    f = open("data/structures/" * framework.structurename * "_shifted.cssr", "w")
+    write(f, @sprintf("%f %f %f\n", framework.a, framework.b, framework.c))
+    write(f, @sprintf("%f %f %f\n", framework.alpha * 180 / pi, framework.beta * 180 / pi, framework.gamma * 180 / pi))
+    write(f, @sprintf("%d 0\n", framework.natoms))
+    write(f, @sprintf("0 %s : %s\n", framework.structurename, framework.structurename))
+    for i = 1:framework.natoms
+        # search in all directions
+        for i_x = -1:1
+            for i_y = -1:1
+                for i_z = -1:1
+                    # only store if this shifted atom is in [0,1]^3
+                    pos = framework.fractional_coords[:, i] + xf_shift + [i_x, i_y, i_z]
+                    if ((sum(pos .> 1.0) == 0) & (sum(pos .< 0.0) == 0))
+                        write(f, @sprintf("%d %s %f %f %f  0  0  0  0  0  0  0  0  0.000000\n", i, framework.atoms[i], pos[1], pos[2], pos[3]))
+                    end
+                end
+            end
+        end
+    end
+    @printf("Shifted unit cell present in /data/structures/%s_shifted.cssr\n", framework.structurename)
+    close(f)
+end
     
 function write_unitcell_boundary_vtk(frameworkname::String)
     """
@@ -210,6 +243,7 @@ function write_unitcell_boundary_vtk(frameworkname::String)
     @printf(vtk_file, "LINES 12 36\n2 0 1\n2 0 2\n2 1 3\n2 2 3\n2 4 5\n
                        2 4 6\n2 5 7\n2 6 7\n2 0 4\n2 1 5\n2 2 6\n2 3 7\n")
     close(vtk_file)
+    @printf(".vtk available at: %s\n", homedir() * "/PEGrid_output/" * framework.structurename * ".vtk")
 end
 
 function replicate_cssr_to_xyz(frameworkname::String; rep_factor::Int=1)
@@ -228,14 +262,24 @@ function replicate_cssr_to_xyz(frameworkname::String; rep_factor::Int=1)
     xyz_file = open(homedir() * "/PEGrid_output/" * framework.structurename * ".xyz", "w")
     @printf(xyz_file, "%d\n\n", framework.natoms * (2 * rep_factor + 1)^3)
 
-    for a = 1:framework.natoms
-        for rep_x = -rep_factor:rep_factor
-            for rep_y = -rep_factor:rep_factor
-                for rep_z = -rep_factor:rep_factor
-                    x_f = framework.fractional_coords[:, a] + 1.0 * [rep_x, rep_y, rep_z]  # fractional coord
-                    xyz = framework.f_to_cartesian_mtrx * x_f
-                    @printf(xyz_file, "%s %f %f %f\n", framework.atoms[a], 
-                            xyz[1], xyz[2], xyz[3])
+    if rep_factor == 0
+        # if no replications are needed
+        for a = 1:framework.natoms
+            xyz = framework.f_to_cartesian_mtrx * framework.fractional_coords[:, a]
+            @printf(xyz_file, "%s %f %f %f\n", framework.atoms[a], 
+                    xyz[1], xyz[2], xyz[3])
+        end
+    else 
+        # if desire to replicate unit cell
+        for a = 1:framework.natoms
+            for rep_x = -rep_factor:rep_factor
+                for rep_y = -rep_factor:rep_factor
+                    for rep_z = -rep_factor:rep_factor
+                        x_f = framework.fractional_coords[:, a] + 1.0 * [rep_x, rep_y, rep_z]  # fractional coord
+                        xyz = framework.f_to_cartesian_mtrx * x_f
+                        @printf(xyz_file, "%s %f %f %f\n", framework.atoms[a], 
+                                xyz[1], xyz[2], xyz[3])
+                    end
                 end
             end
         end
