@@ -38,6 +38,7 @@ type Framework
     # functions
     crystaldensity::Function
     chemicalformula::Function
+    check_for_atom_overlap::Function
 
     # constructor
     function Framework(structurename::String)
@@ -116,7 +117,6 @@ type Framework
         
         close(f) # close file
         
-        # compute crystal density
         framework.crystaldensity = function ()
             """
             Computes crystal density of the framework (kg/m3)
@@ -177,8 +177,40 @@ type Framework
             return atom_dict
         end  # end chemicalformula
 
+        framework.check_for_atom_overlap = function (distance_tol::Float64)
+            """
+            Loop through all atoms, check that they do not overlap with any others
+            i.e. check for duplicate atoms in the crystal structure file
+            :param Float64 distance_tol: tolerance for when an atom is considered to overlap
+            :returns false if no overlap
+            """
+            for i = 1:framework.natoms
+                x_i = framework.f_to_cartesian_mtrx * framework.fractional_coords[:, i]
+                # loop over adjacent unit cells
+                for i_x = -1:1
+                    for i_y = -1:1
+                        for i_z = -1:1
+                            for j = 1:framework.natoms
+                                if (j == i)
+                                    continue
+                                end
+                                x_j = framework.f_to_cartesian_mtrx * (framework.fractional_coords[:, j] + 1.0 * [i_x, i_y, i_z])
+                                r = norm(x_i - x_j)
+                                if (r < distance_tol)
+                                    @printf("WARNING: overlap found")
+                                    @printf("Atom %d and %d are a distance %f apart.\n", i, j, r)
+                                    return true
+                                end
+                            end  # loop over atom j
+                        end  # loop over z uc
+                    end  # loop over y uc
+                end  # loop over x uc
+            end  # loop over atom i
+            return false
+        end  # end check_for_atom_overlap
+
         return framework
-    end  # end crystal density
+    end  # end constructor
 end  # end Framework type
 
 function shift_unit_cell_write_cssr(frameworkname::String, xf_shift::Array{Float64})
