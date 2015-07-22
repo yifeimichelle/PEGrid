@@ -8,7 +8,7 @@ include("adsorbates.jl")
 using Optim
 
 
-function writegrid(adsorbatename::String, 
+function write_vdW_grid(adsorbatename::String, 
                    structurename::String, 
                    forcefieldname::String; 
                    gridspacing=0.1, 
@@ -17,6 +17,7 @@ function writegrid(adsorbatename::String,
                    num_rotation_samples::Int=1000)
     """
     Compute the potential energy of an adsorbate molecule on a 3D grid of points superimposed on the unit cell of the structure.
+    Computes only van der Waals energies
 
     The grid is written to a file `structurename.cube`, in Gaussian cube format. The units of the energy are kJ/mol.
 
@@ -92,11 +93,11 @@ function writegrid(adsorbatename::String,
             for k in 1:N_z  # loop over z_f-grid points
                 
                 # translate adsorbate to grid pt
-                adsorbate.translate(framework.f_to_cartesian_mtrx * [xf_grid[i], yf_grid[j], zf_grid[k]])
+                adsorbate.translate_to(framework.f_to_cartesian_mtrx * [xf_grid[i], yf_grid[j], zf_grid[k]])
                 
                 # compute energy here
                 if adsorbate.nbeads == 1  # no need for sampling rotations
-                    E = _energy_of_adsorbate!(adsorbate,
+                    E = _vdW_energy_of_adsorbate!(adsorbate,
                                               epsilons,
                                               sigmas,
                                               framework,
@@ -108,7 +109,7 @@ function writegrid(adsorbatename::String,
                     for rot = 1:num_rotation_samples
                         adsorbate.perform_uniform_random_rotation()
 
-                        _energy = _energy_of_adsorbate!(adsorbate,
+                        _energy = _vdW_energy_of_adsorbate!(adsorbate,
                                                     epsilons,
                                                     sigmas,
                                                     framework,
@@ -121,9 +122,6 @@ function writegrid(adsorbatename::String,
                     end
                     E = weighted_energy_sum / boltzmann_weight_sum
                 end
-                
-                # translate adsorbate back to COM
-                adsorbate.set_origin_at_COM()
                 
                 # write energy at this point to grid file
                 @printf(gridfile, "%e ", E * 8.314 / 1000.0)  # store in kJ/mol
@@ -225,7 +223,7 @@ type Grid
 
         grid.energy_at = function(x_f::Float64, y_f::Float64, z_f::Float64)
             """
-            Get energy at fractional coord x_f, y_f, z_f
+            Get energy at fractional coord x_f, y_f, z_f by interpolation
             """
             @assert((x_f >= 0.0) & (y_f >= 0.0) & (z_f >= 0.0))
             @assert((x_f <= 1.0) & (y_f <= 1.0) & (z_f <= 1.0))

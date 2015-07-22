@@ -105,6 +105,7 @@ function henry(adsorbatename::String,
         f = open(homedir() * "/PEGrid_output/henries/" * structurename * "_" * adsorbatename * "_henry.txt", "w")
         @printf(f, "T = %f K\n", temperature)
         @printf(f, "Framework density (kg/m3) = %f\n", framework.crystaldensity())
+        @printf(f, "Insertions per A3: %d\n", insertions_per_A3)
         @printf(f, "<E> (kJ/mol) = %f\n", avg_E * 8.314 / 1000)
         @printf(f, "Min. E = %f kJ/mol\n", E_min * 8.314 / 1000.0)
         @printf(f, "KH, %s (mol/m3-Pa) = %e\n", adsorbatename, KH)

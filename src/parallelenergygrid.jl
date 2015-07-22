@@ -128,7 +128,7 @@ function parallel_writegrid(adsorbatename::String,
             for k = 1:N_z  # loop over z_f-grid points
                 
                 # translate adsorbate to grid pt
-                adsorbate.translate(framework.f_to_cartesian_mtrx * [xf, yf_grid[j], zf_grid[k]])
+                adsorbate.translate_to(framework.f_to_cartesian_mtrx * [xf, yf_grid[j], zf_grid[k]])
 
                 # compute energy here
                 if adsorbate.nbeads == 1  # no need for sampling rotations
@@ -157,9 +157,6 @@ function parallel_writegrid(adsorbatename::String,
                     end
                     E_yz_sheet[j, k] = weighted_energy_sum / boltzmann_weight_sum
                 end
-
-                # translate adsorbate back to origin
-                adsorbate.set_origin_at_COM()
             end
         end
         

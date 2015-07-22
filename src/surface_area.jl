@@ -3,8 +3,10 @@ include("framework.jl")
 include("forcefield.jl")
 include("energyutils.jl")
 
-# a faster uniform sphere generation
 function unit_sphere_random_number()
+    """
+    Generate Cartesian coord on surface of unit sphere (faster)
+    """
 	ransq = 1.0
 	ran1 = 0.0
 	ran2 = 0.0
@@ -20,8 +22,10 @@ function unit_sphere_random_number()
 	return x, y, z
 end
 
-# from cory's blog
 function unit_sphere_random_number2()
+    """
+    Generate Cartesian coord on surface of unit sphere (from cory's blog)
+    """
 	v = [0, 0, 0]
 	while norm(v) < .0001
 		x = randn()
@@ -33,8 +37,10 @@ function unit_sphere_random_number2()
 	return v[1], v[2], v[3]
 end
 
-# Applying boundary conditions
 function apply_boundary_conditions(distance, framework)
+    """
+    Apply periodic boundary conditions
+    """
 	x = zeros(Float64, 3) 
 	fractional = framework.cartesian_to_f_mtrx * [distance[1], distance[2], distance[3]]
 	# apply boundary conditions
@@ -46,18 +52,19 @@ function apply_boundary_conditions(distance, framework)
 end
 
 function check_surface_area_overlap(probe, probe_size, f_xf, f_yf, f_zf, sigmas, framework)
-	#start looping over atoms except self.
+    """
+    Loop over all framework atoms, check for overlap (except self)
+    """
 	fAtom = zeros(Float64, 3) 
 	distance = zeros(Float64, 3)
 	fAtom = [f_xf, f_yf, f_zf]
-	array_size = framework.natoms
-	for i = 1:array_size
+	for i = 1:framework.natoms
 		fAtom_tmp = zeros(Float64, 3)
-		fAtom_tmp = [framework.xf[i], framework.yf[i], framework.zf[i]]
+		fAtom_tmp = framework.fractional_coords[:, i]
 		if fAtom != fAtom_tmp
 			vdW_fAtom = sigmas[i]
 			equilibrium_distance = 0.5 * (vdW_fAtom + probe_size)
-			fAtom_xyz = framework.f_to_cartesian_mtrx * [fAtom_tmp[1], fAtom_tmp[2], fAtom_tmp[3]]
+			fAtom_xyz = framework.f_to_cartesian_mtrx * fAtom_tmp
 			distance[1] = probe[1] - fAtom_xyz[1]
 			distance[2] = probe[2] - fAtom_xyz[2]
 			distance[3] = probe[3] - fAtom_xyz[3]
@@ -79,9 +86,9 @@ function surface_area(probe::String, structurename::String, forcefieldname::Stri
 	framework = Framework(structurename)
 	
     @printf("Constructing forcefield object for %s...\n", forcefieldname)
-    forcefield = Forcefield(forcefieldname, "N2", cutoff=12.8, mixingrules="Surface")
+    forcefield = Forcefield(forcefieldname, "N2", cutoff=12.8, mixingrules="PureInteractions")
 
-    pos_array, epsilons, sigmas = _generate_pos_array_epsilons_sigmas(framework, forcefield)
+    epsilons, sigmas = _generate_epsilons_sigmas(framework, [forcefield])
 	array_size = framework.natoms
 	@printf("Size of probe: %f \n", probe_size)
 	@printf("Unit Cell Volume: %f \n", framework.v_unitcell)
@@ -100,12 +107,12 @@ function surface_area(probe::String, structurename::String, forcefieldname::Stri
 			total += 1
 			probe = zeros(Float64, 3)
 			x, y, z = unit_sphere_random_number2()
-			fAtom_xyz = framework.f_to_cartesian_mtrx * [framework.xf[i], framework.yf[i], framework.zf[i]]
+			fAtom_xyz = framework.f_to_cartesian_mtrx * framework.fractional_coords[:, i]
 			probe[1] = fAtom_xyz[1] + x * equilibrium_distance
 			probe[2] = fAtom_xyz[2] + y * equilibrium_distance
 			probe[3] = fAtom_xyz[3] + z * equilibrium_distance
 			# check for overlap with framework atoms
-			overlap = check_surface_area_overlap(probe, probe_size, framework.xf[i], framework.yf[i], framework.zf[i], sigmas, framework)
+			overlap = check_surface_area_overlap(probe, probe_size, framework.fractional_coords[1, i], framework.fractional_coords[2, i], framework.fractional_coords[3, i], sigmas, framework)
 			if overlap == false
 				counted += 1
 			end
@@ -116,4 +123,5 @@ function surface_area(probe::String, structurename::String, forcefieldname::Stri
 		@printf(fractional_data, "%s %f %f %f \n", framework.atoms[i], counted / total, tmp, 1.0e4 * tmp / framework.v_unitcell)
 	end
 	@printf("Volumetric Surface Area (m2/cm3): %f", 1.0e4 * SurfaceAreaAverage / framework.v_unitcell)
+    return 1.0e4 * SurfaceAreaAverage / framework.v_unitcell
 end

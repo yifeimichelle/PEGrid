@@ -25,20 +25,28 @@ type Framework
     # atom count (in primitive unit cell)
     natoms::Int
     
+    # atom identites
+    atoms::Array{String}
+    
     # fractional coordinates (3 by natoms)
     fractional_coords::Array{Float64}
 
-    # atom identites
-    atoms::Array{String}
+    # charges on atoms (units: electron charge)
+    charges::Array{Float64}
 
     # transformation matrix from fractional to cartesian
     f_to_cartesian_mtrx::Array{Float64}
     cartesian_to_f_mtrx::Array{Float64}
 
+    # reciprocal lattice vectors
+    reciprocal_lattice::Array{Float64}
+
     # functions
     crystaldensity::Function
     chemicalformula::Function
     check_for_atom_overlap::Function
+    check_for_charge_neutrality::Function
+    print_info::Function
 
     # constructor
     function Framework(structurename::String)
@@ -97,10 +105,19 @@ type Framework
         framework.cartesian_to_f_mtrx[3,2] = 0.0;
         framework.cartesian_to_f_mtrx[3,3] = sin(framework.gamma) / (framework.c * v_unit_piped);
 
+        # get reciprocal lattice vectors
+        framework.reciprocal_lattice = Array(Float64, (3,3))
+        framework.reciprocal_lattice[:, 1] = 2.0 * pi * cross(framework.f_to_cartesian_mtrx[:, 2], framework.f_to_cartesian_mtrx[:, 3]) / 
+                dot(framework.f_to_cartesian_mtrx[:, 1], cross(framework.f_to_cartesian_mtrx[:, 2], framework.f_to_cartesian_mtrx[:, 3]))
+        framework.reciprocal_lattice[:, 2] = 2.0 * pi * cross(framework.f_to_cartesian_mtrx[:, 3], framework.f_to_cartesian_mtrx[:, 1]) / 
+                dot(framework.f_to_cartesian_mtrx[:, 2], cross(framework.f_to_cartesian_mtrx[:, 3], framework.f_to_cartesian_mtrx[:, 1]))
+        framework.reciprocal_lattice[:, 3] = 2.0 * pi * cross(framework.f_to_cartesian_mtrx[:, 1], framework.f_to_cartesian_mtrx[:, 2]) / 
+                dot(framework.f_to_cartesian_mtrx[:, 3], cross(framework.f_to_cartesian_mtrx[:, 1], framework.f_to_cartesian_mtrx[:, 2]))
         
         # get atom count, initialize arrays holding coords
         framework.natoms = int(split(readline(f))[1])
         framework.atoms = Array(String, framework.natoms)
+        framework.charges = Array(Float64, framework.natoms)
         framework.fractional_coords = zeros(Float64, 3, framework.natoms)  # fractional coordinates
 
         # read in atoms and fractional coordinates
@@ -113,6 +130,8 @@ type Framework
             framework.fractional_coords[1, a] = float(line[3]) % 1.0 # wrap to [0,1]
             framework.fractional_coords[2, a] = float(line[4]) % 1.0
             framework.fractional_coords[3, a] = float(line[5]) % 1.0
+
+            framework.charges[a] = float(line[14])
         end
         
         close(f) # close file
@@ -208,6 +227,32 @@ type Framework
             end  # loop over atom i
             return false
         end  # end check_for_atom_overlap
+
+        framework.check_for_charge_neutrality = function(tol::Float64)
+            """
+            Check for charge neutrality within a tolerance
+            """
+            net_charge = sum(framework.charges)
+            if (net_charge < -abs(tol)) | (net_charge > abs(tol))
+                @printf("Warning: Framework is not charge neutral!\n")
+                @printf("Net charge is %f.\n", net_charge)
+            end
+        end
+
+        framework.print_info = function()
+            @printf("Framework: %s\n", framework.structurename)
+            @printf("\t%d atoms.\n", framework.natoms)
+            for i = 1:framework.natoms
+                @printf("%d. %s, xf = (%f, %f, %f), charge = %f\n", i, framework.atoms[i], 
+                        framework.fractional_coords[1, i], framework.fractional_coords[2, i], framework.fractional_coords[3, i],
+                        framework.charges[i])
+            end
+            @printf("Crystal density: %f kg/m3\n", framework.crystaldensity())
+            @printf("Total charge: %f\n", sum(framework.charges))
+        end
+
+        framework.check_for_atom_overlap(0.1)
+        framework.check_for_charge_neutrality(0.001)
 
         return framework
     end  # end constructor

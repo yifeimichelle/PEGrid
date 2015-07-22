@@ -6,26 +6,31 @@ using DataFrames
 
 type Forcefield
     """
-    Stores attributes of a force field
+    Stores attributes of a Lennard-Jones force field
     """
+    # name of force field
     name::String
 
-    # bead inadsorbate molecule
+    # bead in adsorbate molecule
     bead::String
 
     # number of interactions in the forcefield
     ninteractions::Int
 
     # Lennard-Jones parameters for bead - X interactions
-    atoms::Array{String}
-    epsilon::Array{Float64}
-    sigma::Array{Float64}
+    # store as dictionary so we can call e.g.:
+    # epsilon["C"]
+    # to get bead-C epsilon parameter
+    epsilon::Dict
+    sigma::Dict
 
     # cutoff radius for Lennard-Jones potential
     cutoff::Float64
 
     # mixing rules to get bead-solid interactions
     mixingrules::String
+
+    print_info::Function
     
     # constructor
     function Forcefield(name::String, 
@@ -56,21 +61,32 @@ type Forcefield
         
         # initialize arrays in forcefield
         forcefield.ninteractions = size(df, 1)
-        forcefield.atoms = Array(String, forcefield.ninteractions)
-        forcefield.epsilon = zeros(Float64, forcefield.ninteractions)
-        forcefield.sigma = zeros(Float64, forcefield.ninteractions)
+        forcefield.epsilon = Dict()
+        forcefield.sigma = Dict()
 
         # compute and store bead - X sigma/epsilon LJ params
         for i = 1:forcefield.ninteractions
-            forcefield.atoms[i] = df[:atom][i]
+            atom_type = df[:atom][i]
             if mixingrules == "Lorenz-Berthelot"
-                forcefield.epsilon[i] = sqrt(bead_eps * df[:epsilon][i])
-                forcefield.sigma[i] = (bead_sig + df[:sigma][i]) / 2.0
+                forcefield.epsilon[atom_type] = sqrt(bead_eps * df[:epsilon][i])
+                forcefield.sigma[atom_type] = (bead_sig + df[:sigma][i]) / 2.0
             elseif mixingrules == "PureInteractions"
-                forcefield.epsilon[i] = df[:epsilon][i]
-                forcefield.sigma[i] = df[:sigma][i]
+                forcefield.epsilon[atom_type] = df[:epsilon][i]
+                forcefield.sigma[atom_type] = df[:sigma][i]
             else
                 error("These mixing rules are not implemented")
+            end
+        end
+
+        forcefield.print_info = function()
+            @printf("%s Force Field for %s adsorbate bead.\n", forcefield.name, forcefield.bead)
+            @printf("\tMixing rules: %s\n", forcefield.mixingrules)
+            @printf("\tLJ cutoff radius: %f\n", forcefield.cutoff)
+
+            for atom_type in keys(forcefield.epsilon)
+                @printf("%-4s - %-4s. epsilon = %f K, sigma = %f A\n",
+                    forcefield.bead, atom_type,
+                    forcefield.epsilon[atom_type], forcefield.sigma[atom_type])
             end
         end
         
