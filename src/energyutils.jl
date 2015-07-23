@@ -232,11 +232,11 @@ function _generate_epsilons_sigmas(framework::Framework, forcefields::Array{Forc
     sigmas = Array(Float64, (framework.natoms, n_beads)) 
     for ff = 1:n_beads
         for i = 1:framework.natoms
-            if ~ (framework.atoms[i] in forcefields[ff].atoms)
+            if ~ haskey(forcefields[ff].epsilon, framework.atoms[i])
                 error(@sprintf("Atom %s not present in force field.", framework.atoms[i]))
             end
-            epsilons[i, ff] = forcefields[ff].epsilon[framework.atoms[i]][1]
-            sigmas[i, ff] = forcefields[ff].sigma[framework.atoms[i]][1]
+            epsilons[i, ff] = forcefields[ff].epsilon[framework.atoms[i]]
+            sigmas[i, ff] = forcefields[ff].sigma[framework.atoms[i]]
         end
     end
 

@@ -132,7 +132,7 @@ function parallel_writegrid(adsorbatename::String,
 
                 # compute energy here
                 if adsorbate.nbeads == 1  # no need for sampling rotations
-                    E_yz_sheet[j, k] = _energy_of_adsorbate!(adsorbate,
+                    E_yz_sheet[j, k] = _vdW_energy_of_adsorbate!(adsorbate,
                                               epsilons,
                                               sigmas,
                                               framework,
@@ -144,7 +144,7 @@ function parallel_writegrid(adsorbatename::String,
                     for rot = 1:num_rotation_samples
                         adsorbate.perform_uniform_random_rotation()
 
-                        _energy = _energy_of_adsorbate!(adsorbate,
+                        _energy = _vdW_energy_of_adsorbate!(adsorbate,
                                                     epsilons,
                                                     sigmas,
                                                     framework,
