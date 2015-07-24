@@ -323,40 +323,43 @@ function write_unitcell_boundary_vtk(frameworkname::String)
     @printf(".vtk available at: %s\n", homedir() * "/PEGrid_output/" * framework.structurename * ".vtk")
 end
 
-function replicate_cssr_to_xyz(frameworkname::String; rep_factor::Int=1)
+function replicate_cssr_to_xyz(frameworkname::String; rep_factors::Array{Int} = [1, 1, 1])
     """
     Converts a .cssr crystal structure file to .xyz
     Replicates unit cell into rep_factor by rep_factor by rep_factor supercell.
     The primitive unit cell will be in the middle.
 
     :param String frameworkname: name of crystal structure
-    :param Int rep_factor: number of times to replicate unit cell
+    :param Array{Int} rep_factor: number of times to replicate unit cell
     """
     framework = Framework(frameworkname)
     if ! isdir(homedir() * "/PEGrid_output")
        mkdir(homedir() * "/PEGrid_output") 
     end
     xyz_file = open(homedir() * "/PEGrid_output/" * framework.structurename * ".xyz", "w")
-    @printf(xyz_file, "%d\n\n", framework.natoms * (2 * rep_factor + 1)^3)
+    n = framework.natoms * (2 * rep_factors[1] + 1) * (2 * rep_factors[2] + 1) * (2 * rep_factors[3] + 1)
+    @printf(xyz_file, "%d\n\n", n)
+    
+    for a = 1:framework.natoms
+        # print atoms in the core unit cell
+        xyz = framework.f_to_cartesian_mtrx * framework.fractional_coords[:, a]
+        @printf(xyz_file, "%s %f %f %f\n", framework.atoms[a], 
+                xyz[1], xyz[2], xyz[3])
+    end
 
-    if rep_factor == 0
-        # if no replications are needed
-        for a = 1:framework.natoms
-            xyz = framework.f_to_cartesian_mtrx * framework.fractional_coords[:, a]
-            @printf(xyz_file, "%s %f %f %f\n", framework.atoms[a], 
-                    xyz[1], xyz[2], xyz[3])
-        end
-    else 
-        # if desire to replicate unit cell
-        for a = 1:framework.natoms
-            for rep_x = -rep_factor:rep_factor
-                for rep_y = -rep_factor:rep_factor
-                    for rep_z = -rep_factor:rep_factor
-                        x_f = framework.fractional_coords[:, a] + 1.0 * [rep_x, rep_y, rep_z]  # fractional coord
-                        xyz = framework.f_to_cartesian_mtrx * x_f
-                        @printf(xyz_file, "%s %f %f %f\n", framework.atoms[a], 
-                                xyz[1], xyz[2], xyz[3])
+    # print atoms in neighboring unit cells
+    for a = 1:framework.natoms
+        for rep_x = -rep_factors[1]:rep_factors[1]
+            for rep_y = -rep_factors[2]:rep_factors[2]
+                for rep_z = -rep_factors[3]:rep_factors[3]
+                    if (rep_x == 0) & (rep_y == 0) & (rep_z == 0)
+                        continue
                     end
+                    # fractional coord
+                    x_f = framework.fractional_coords[:, a] + 1.0 * [rep_x, rep_y, rep_z]  
+                    xyz = framework.f_to_cartesian_mtrx * x_f
+                    @printf(xyz_file, "%s %f %f %f\n", framework.atoms[a], 
+                            xyz[1], xyz[2], xyz[3])
                 end
             end
         end
