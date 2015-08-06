@@ -30,7 +30,7 @@ function _electrostatic_potential_of_bead(xyz_coord::Array{Float64},
     # 1 m = 1e10 A, 1 e = 1.602176e-19 C, kb = 1.3806488e-23 J/K
     # 8.854187817e-12 C^2/(J-m) [1 m / 1e10 A] [1 e / 1.602176e-19 C]^2 [kb = 1.3806488e-23 J/K]
     epsilon_0 = 4.7622424954949676e-7;  # \epsilon_0 vacuum permittivity units: electron charge^2 /(A - K)
-    alpha = 0.35  # related to variance of Gaussians in Ewald sums
+    alpha = 0.025  # related to variance of Gaussians in Ewald sums
 
     ######
     ######  Short-range
@@ -61,11 +61,11 @@ function _electrostatic_potential_of_bead(xyz_coord::Array{Float64},
     ######
     ######  Long-range
     ######
-    k_reps = 5  # number of times to replicate in the k-space
+    k_reps = [7, 7, 6]  # number of times to replicate in the k-space
     E_lr = 0.0
-    for kx = -k_reps:k_reps
-        for ky = -k_reps:k_reps
-            for kz = -k_reps:k_reps
+    for kx = -k_reps[1]:k_reps[1]
+        for ky = -k_reps[2]:k_reps[2]
+            for kz = -k_reps[3]:k_reps[3]
                 if (kx == 0) & (ky == 0) & (kz == 0)
                     continue
                 end
