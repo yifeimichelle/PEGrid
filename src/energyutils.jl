@@ -201,19 +201,19 @@ function get_replication_factors(f_to_cartesian_mtrx::Array{Float64}, cutoff::Fl
     # a replication.
     while abs(dot(n_bc, c0)) / vecnorm(n_bc) < cutoff / 2.0
         rep_factors[1] += 1
-        a = 2 * a
+        a = a + f_to_cartesian_mtrx[:, 1]
         c0 = [a b c] * [0.5, 0.5, 0.5] # update center
     end
     # b replication
     while abs(dot(n_ac, c0)) / vecnorm(n_ac) < cutoff / 2.0
         rep_factors[2] += 1
-        b = 2 * b
+        b = b + f_to_cartesian_mtrx[:, 2]
         c0 = [a b c] * [0.5, 0.5, 0.5] # update center
     end
     # c replication
     while abs(dot(n_ab, c0)) / vecnorm(n_ab) < cutoff / 2.0
         rep_factors[3] += 1
-        c = 2 * c
+        c = c + f_to_cartesian_mtrx[:, 3]
         c0 = [a b c] * [0.5, 0.5, 0.5] # update center
     end
     
