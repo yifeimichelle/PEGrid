@@ -258,21 +258,38 @@ type Framework
     end  # end constructor
 end  # end Framework type
 
-function shift_unit_cell_write_cssr(frameworkname::String, xf_shift::Array{Float64})
+function write_to_cssr(framework::Framework, filename::String)
     """
-    Shift unit cell by fractional amount and write to a new .cssr
-    Shift by fractional amount xf_shift = [.25, .25, .25] for example
-    Saves to data/structures/frameworkname_shifted.cssr
+    Write framework object to .cssr with desired filename
     """
-    framework = Framework(frameworkname)
-    @assert(sum(xf_shift .< 0.0) == 0)
-    @assert(sum(xf_shift .> 1.0) == 0)
-
-    f = open("data/structures/" * framework.structurename * "_shifted.cssr", "w")
+    if (filename == framework.structurename * ".cssr")
+        error("With this filename, we will overwrite the original structure...\n")
+    end
+    f = open("data/structures/" * filename, "w")
     write(f, @sprintf("%f %f %f\n", framework.a, framework.b, framework.c))
     write(f, @sprintf("%f %f %f\n", framework.alpha * 180 / pi, framework.beta * 180 / pi, framework.gamma * 180 / pi))
     write(f, @sprintf("%d 0\n", framework.natoms))
-    write(f, @sprintf("0 %s : %s\n", framework.structurename, framework.structurename))
+    write(f, @sprintf("0 %s : %s\n", framework.structurename, "revised by PEGrid"))
+    for i = 1:framework.natoms
+        # only store if this shifted atom is in [0,1]^3
+        write(f, @sprintf("%d %s %f %f %f  0  0  0  0  0  0  0  0  %f\n", i, framework.atoms[i], 
+                framework.fractional_coords[1, i], framework.fractional_coords[2, i], framework.fractional_coords[3, i],
+                framework.charges[i]))
+    end
+    @printf("Cssr can be found in /data/structures/%s\n", filename)
+    close(f)
+end
+
+function shift_unit_cell(framework::Framework, xf_shift::Array{Float64})
+    """
+    Shift unit cell by fractional amount
+    Shift by fractional amount xf_shift = [.25, .25, .25] for example
+    """
+    new = deepcopy(framework)
+    @assert(sum(xf_shift .< 0.0) == 0)
+    @assert(sum(xf_shift .> 1.0) == 0)
+    
+    count = 0
     for i = 1:framework.natoms
         # search in all directions
         for i_x = -1:1
@@ -281,14 +298,49 @@ function shift_unit_cell_write_cssr(frameworkname::String, xf_shift::Array{Float
                     # only store if this shifted atom is in [0,1]^3
                     pos = framework.fractional_coords[:, i] + xf_shift + [i_x, i_y, i_z]
                     if ((sum(pos .> 1.0) == 0) & (sum(pos .< 0.0) == 0))
-                        write(f, @sprintf("%d %s %f %f %f  0  0  0  0  0  0  0  0  0.000000\n", i, framework.atoms[i], pos[1], pos[2], pos[3]))
+                        count += 1
+                        new.atoms[count] = new.atoms[i]
+                        new.fractional_coords[1, count] = pos[1]
+                        new.fractional_coords[2, count] = pos[2]
+                        new.fractional_coords[3, count] = pos[3]
                     end
                 end
             end
         end
     end
-    @printf("Shifted unit cell present in /data/structures/%s_shifted.cssr\n", framework.structurename)
-    close(f)
+    @assert(count == framework.natoms)
+    return new
+end
+
+function consolidate_atoms_with_same_charge(framework::Framework; decimal_tol::Int=3)
+    """
+    Groups atoms of same element and charge together as a single type.
+    e.g. C with charge = 0.5 ==> C_a
+    decimal_tol = 2 considers 0.231 and 0.234 the same charge
+    """
+    new = deepcopy(framework)
+    
+    strings_to_append = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n"]
+    # get unique atom types
+    unique_atoms = unique(framework.atoms)
+    # get rounded charges for comparison
+    rounded_charges = round(framework.charges, decimal_tol)
+    # for every atom, make it C_a etc
+    for a in unique_atoms
+        idx = framework.atoms .== a
+        # get unique charges of this atom
+        unique_charges = unique(rounded_charges[idx])
+        # consolidate atoms a with the same charge
+        for c = 1:length(unique_charges)
+            if c > length(strings_to_append)
+                error("need more strings to append to element names...")
+            end
+            idx_ = idx & (rounded_charges .== unique_charges[c])
+            new.atoms[idx_] = a * "_" * strings_to_append[c]
+        end
+    end
+    new.charges = rounded_charges
+    return new
 end
     
 function write_unitcell_boundary_vtk(frameworkname::String)
