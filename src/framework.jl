@@ -312,11 +312,12 @@ function shift_unit_cell(framework::Framework, xf_shift::Array{Float64})
     return new
 end
 
-function consolidate_atoms_with_same_charge(framework::Framework; decimal_tol::Int=3)
+function consolidate_atoms_with_same_charge(framework::Framework; decimal_tol::Int=3, verbose::Bool=false)
     """
     Groups atoms of same element and charge together as a single type.
     e.g. C with charge = 0.5 ==> C_a
     decimal_tol = 2 considers 0.231 and 0.234 the same charge
+    returns new_framework, charge_dictionary, element_dictionary
     """
     new = deepcopy(framework)
     
@@ -325,6 +326,14 @@ function consolidate_atoms_with_same_charge(framework::Framework; decimal_tol::I
     unique_atoms = unique(framework.atoms)
     # get rounded charges for comparison
     rounded_charges = round(framework.charges, decimal_tol)
+    if verbose
+        @printf("New_atom_label Element Charge\n")
+    end
+
+    # charge dictionary. atom_label:charge
+    charge_dict = Dict()
+    # element dictionary. atom_label:element
+    element_dict = Dict()
     # for every atom, make it C_a etc
     for a in unique_atoms
         idx = framework.atoms .== a
@@ -335,12 +344,19 @@ function consolidate_atoms_with_same_charge(framework::Framework; decimal_tol::I
             if c > length(strings_to_append)
                 error("need more strings to append to element names...")
             end
+            new_label = a * "_" * strings_to_append[c]
+            
             idx_ = idx & (rounded_charges .== unique_charges[c])
-            new.atoms[idx_] = a * "_" * strings_to_append[c]
+            new.atoms[idx_] = new_label
+            if verbose
+                @printf("%s %s %s\n", new_label, a, unique_charges[c])
+            end
+            element_dict[new_label] = a
+            charge_dict[new_label] = unique_charges[c]
         end
     end
     new.charges = rounded_charges
-    return new
+    return new, charge_dict, element_dict
 end
     
 function write_unitcell_boundary_vtk(frameworkname::String)
