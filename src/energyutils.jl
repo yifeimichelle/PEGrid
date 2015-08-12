@@ -6,16 +6,19 @@ include("forcefield.jl")
 include("adsorbates.jl")
 
 
-function _electrostatic_potential_of_bead(xyz_coord::Array{Float64},
+function _electrostatic_potential(xyz_coord::Array{Float64},
                          framework::Framework,
                          rep_factors::Array{Int},
-                         cutoff::Float64)
+                         sr_cutoff::Float64;
+                         precision::Float64=1e-6)
     """
     EWald sum to compute electrostatic potential at Cartesian point xyz_coord
     
+    :param Array{Float64} xyz_coord: the Cartesian (x,y,z) coordinate inside framework where we seek electrostatic potential
     :param Framework framework: the structure
     :param Array{Int} rep_factors: x,y,z replication factors of primitive unit cell for PBCs
-    :param Float64 cutoff: short-range cutoff distance
+    :param Float64 srcutoff: short-range cutoff distance
+    :param Float64 precision: EWald precision
     """
     @assert(size(xyz_coord) == (3,))
     # get fractional coord of bead
@@ -30,7 +33,22 @@ function _electrostatic_potential_of_bead(xyz_coord::Array{Float64},
     # 1 m = 1e10 A, 1 e = 1.602176e-19 C, kb = 1.3806488e-23 J/K
     # 8.854187817e-12 C^2/(J-m) [1 m / 1e10 A] [1 e / 1.602176e-19 C]^2 [kb = 1.3806488e-23 J/K]
     epsilon_0 = 4.7622424954949676e-7;  # \epsilon_0 vacuum permittivity units: electron charge^2 /(A - K)
-    alpha = 0.025  # related to variance of Gaussians in Ewald sums
+
+    ###
+    ###  Rules to determine EWald parameters for a given precision (from DLPoly)
+    ###
+    blah = sqrt(abs(log(precision * sr_cutoff)))
+    # alpha parameter to determine width of Gaussian
+    alpha = sqrt(abs(log(precision * sr_cutoff * blah))) / sr_cutoff
+    # number of replications in k-space for long-range interactions
+    k_reps = Array(Float64, 3)
+    blah_ = sqrt(-log(precision * sr_cutoff * (2.0 * blah * alpha)^2))
+    k_reps[1] = round(0.25 + framework.a * alpha * blah_ / pi)
+    k_reps[2] = round(0.25 + framework.b * alpha * blah_ / pi)
+    k_reps[3] = round(0.25 + framework.c * alpha * blah_ / pi)
+    alpha = alpha^2 # Our alpha is different
+    @printf("alpha convergence parameter = %f, k_reps = [%d, %d, %d] for Ewald precision %f\n", 
+                alpha, k_reps[1], k_reps[2], k_reps[3], precision)
 
     ######
     ######  Short-range
@@ -49,7 +67,7 @@ function _electrostatic_potential_of_bead(xyz_coord::Array{Float64},
                     r = sqrt(dx[1]*dx[1] + dx[2]*dx[2] + dx[3]*dx[3])
 
                     # add contribution to sr energy
-                    if r < cutoff
+                    if r < sr_cutoff
                         E_sr += framework.charges[i] / (4.0 * pi * epsilon_0) / r * erfc(r * sqrt(alpha))
                     end
                 end
@@ -61,7 +79,6 @@ function _electrostatic_potential_of_bead(xyz_coord::Array{Float64},
     ######
     ######  Long-range
     ######
-    k_reps = [7, 7, 6]  # number of times to replicate in the k-space
     E_lr = 0.0
     for kx = -k_reps[1]:k_reps[1]
         for ky = -k_reps[2]:k_reps[2]
@@ -171,7 +188,7 @@ function _vdW_energy_of_adsorbate!(adsorbate::Adsorbate,
     return E  # in Kelvin
 end
 
-function get_replication_factors(f_to_cartesian_mtrx::Array{Float64}, cutoff::Float64)
+function get_replication_factors(framework::Framework, cutoff::Float64)
     """
     Get replication factors for the unit cell such that only directly adjacent ghost unit cells 
         are required for consideration in applying periodic boundary conditions (PBCs).
@@ -179,13 +196,13 @@ function get_replication_factors(f_to_cartesian_mtrx::Array{Float64}, cutoff::Fl
         any particles two ghost cells away from the home cell.
     This is done by ensuring that a sphere of radius cutoff can fit inside the unit cell
     
-    :param Array{Float64} f_to_cartesian_mtrx: transformation matrix from fractional to Cartesian coordinates
+    :param Framework framework: the crystal structure Framework object
     :param Float64 cutoff: Lennard-Jones cutoff distance, beyond which VdW interactions are approximated as zero.
     """
     # unit cell vectors
-    a = f_to_cartesian_mtrx[:,1]
-    b = f_to_cartesian_mtrx[:,2]
-    c = f_to_cartesian_mtrx[:,3]
+    a = framework.f_to_cartesian_mtrx[:, 1]
+    b = framework.f_to_cartesian_mtrx[:, 2]
+    c = framework.f_to_cartesian_mtrx[:, 3]
 
     # normal vectors to the faces of the unit cell
     n_ab = cross(a, b)
@@ -201,19 +218,19 @@ function get_replication_factors(f_to_cartesian_mtrx::Array{Float64}, cutoff::Fl
     # a replication.
     while abs(dot(n_bc, c0)) / vecnorm(n_bc) < cutoff / 2.0
         rep_factors[1] += 1
-        a = a + f_to_cartesian_mtrx[:, 1]
+        a = a + framework.f_to_cartesian_mtrx[:, 1]
         c0 = [a b c] * [0.5, 0.5, 0.5] # update center
     end
     # b replication
     while abs(dot(n_ac, c0)) / vecnorm(n_ac) < cutoff / 2.0
         rep_factors[2] += 1
-        b = b + f_to_cartesian_mtrx[:, 2]
+        b = b + framework.f_to_cartesian_mtrx[:, 2]
         c0 = [a b c] * [0.5, 0.5, 0.5] # update center
     end
     # c replication
     while abs(dot(n_ab, c0)) / vecnorm(n_ab) < cutoff / 2.0
         rep_factors[3] += 1
-        c = c + f_to_cartesian_mtrx[:, 3]
+        c = c + framework.f_to_cartesian_mtrx[:, 3]
         c0 = [a b c] * [0.5, 0.5, 0.5] # update center
     end
     
