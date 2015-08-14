@@ -9,8 +9,11 @@ include("adsorbates.jl")
 function _electrostatic_potential(xyz_coord::Array{Float64},
                          framework::Framework,
                          rep_factors::Array{Int},
-                         sr_cutoff::Float64;
-                         precision::Float64=1e-6)
+                         sr_cutoff::Float64,
+                         alpha::Float64,
+                         k_reps::Array{Int};
+                         precision::Float64=1e-6,
+                         verboseflag=false)
     """
     EWald sum to compute electrostatic potential at Cartesian point xyz_coord
     
@@ -33,22 +36,6 @@ function _electrostatic_potential(xyz_coord::Array{Float64},
     # 1 m = 1e10 A, 1 e = 1.602176e-19 C, kb = 1.3806488e-23 J/K
     # 8.854187817e-12 C^2/(J-m) [1 m / 1e10 A] [1 e / 1.602176e-19 C]^2 [kb = 1.3806488e-23 J/K]
     epsilon_0 = 4.7622424954949676e-7;  # \epsilon_0 vacuum permittivity units: electron charge^2 /(A - K)
-
-    ###
-    ###  Rules to determine EWald parameters for a given precision (from DLPoly)
-    ###
-    blah = sqrt(abs(log(precision * sr_cutoff)))
-    # alpha parameter to determine width of Gaussian
-    alpha = sqrt(abs(log(precision * sr_cutoff * blah))) / sr_cutoff
-    # number of replications in k-space for long-range interactions
-    k_reps = Array(Float64, 3)
-    blah_ = sqrt(-log(precision * sr_cutoff * (2.0 * blah * alpha)^2))
-    k_reps[1] = round(0.25 + framework.a * alpha * blah_ / pi)
-    k_reps[2] = round(0.25 + framework.b * alpha * blah_ / pi)
-    k_reps[3] = round(0.25 + framework.c * alpha * blah_ / pi)
-    alpha = alpha^2 # Our alpha is different
-    @printf("alpha convergence parameter = %f, k_reps = [%d, %d, %d] for Ewald precision %f\n", 
-                alpha, k_reps[1], k_reps[2], k_reps[3], precision)
 
     ######
     ######  Short-range
@@ -74,7 +61,9 @@ function _electrostatic_potential(xyz_coord::Array{Float64},
             end  # end replication in x-direction
         end  # end replication in y-direction
     end  # end replication in z-direction
-    @printf("Esr = %f\n", E_sr)
+    if verboseflag
+        @printf("Esr = %f\n", E_sr)
+    end
 
     ######
     ######  Long-range
@@ -104,7 +93,9 @@ function _electrostatic_potential(xyz_coord::Array{Float64},
         end
     end
     E_lr = E_lr / framework.v_unitcell / epsilon_0
-    @printf("Elr = %f\n", E_lr)
+    if verboseflag
+        @printf("Elr = %f\n", E_lr)
+    end
     return E_lr + E_sr
 end
 
@@ -272,7 +263,7 @@ function vdW_energy_of_adsorbate_config(adsorbate::Adsorbate, structurename::Str
     end
     
     # get unit cell replication factors for periodic BCs
-    rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
+    rep_factors = get_replication_factors(framework, cutoff)
     
     # get position array and epsilons/sigmas for easy computation
     epsilons, sigmas = _generate_epsilons_sigmas(framework, forcefields)
@@ -324,7 +315,7 @@ function vdW_energy_of_adsorbate(adsorbatename::String,
     end
     
     # get unit cell replication factors for periodic BCs
-    rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
+    rep_factors = get_replication_factors(framework, cutoff)
     if (verbose_flag)
         @printf("\tUnit cell replication factors for cutoff radius %f A: %d x %d x %d\n", cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
     end
@@ -404,7 +395,7 @@ function find_min_energy_position(structurename::String,
     end
     
     # get unit cell replication factors for periodic BCs
-    rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
+    rep_factors = get_replication_factors(framework, cutoff)
     @printf("\tUnit cell replication factors for cutoff radius %f A: %d x %d x %d\n", cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
     
     # get epsilons/sigmas for easy computation
@@ -478,7 +469,7 @@ function get_optimal_rotation(adsorbate::Adsorbate,
     end
     
     # get unit cell replication factors for periodic BCs
-    rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
+    rep_factors = get_replication_factors(framework, cutoff)
     
     # get epsilons/sigmas for easy computation
     epsilons, sigmas = _generate_epsilons_sigmas(framework, forcefields)

@@ -29,7 +29,7 @@ type Forcefield
 
     # mixing rules to get bead-solid interactions
     mixingrules::String
-
+    
     print_info::Function
     
     # constructor

@@ -266,13 +266,13 @@ function write_to_cssr(framework::Framework, filename::String)
         error("With this filename, we will overwrite the original structure...\n")
     end
     f = open("data/structures/" * filename, "w")
-    write(f, @sprintf("%f %f %f\n", framework.a, framework.b, framework.c))
-    write(f, @sprintf("%f %f %f\n", framework.alpha * 180 / pi, framework.beta * 180 / pi, framework.gamma * 180 / pi))
+    write(f, @sprintf("\t\t\t%f %f %f\n", framework.a, framework.b, framework.c))
+    write(f, @sprintf("\t\t%f %f %f SPGR = 1 P 1      OPT = 0\n", framework.alpha * 180 / pi, framework.beta * 180 / pi, framework.gamma * 180 / pi))
     write(f, @sprintf("%d 0\n", framework.natoms))
     write(f, @sprintf("0 %s : %s\n", framework.structurename, "revised by PEGrid"))
     for i = 1:framework.natoms
         # only store if this shifted atom is in [0,1]^3
-        write(f, @sprintf("%d %s %f %f %f  0  0  0  0  0  0  0  0  %f\n", i, framework.atoms[i], 
+        write(f, @sprintf(" %d %s %f %f %f  0  0  0  0  0  0  0  0  %f\n", i, framework.atoms[i], 
                 framework.fractional_coords[1, i], framework.fractional_coords[2, i], framework.fractional_coords[3, i],
                 framework.charges[i]))
     end

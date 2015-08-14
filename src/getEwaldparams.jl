@@ -1,25 +1,33 @@
 include("framework.jl")
-using Roots
 
-function getEwaldparams(framework::Framework, precision::Float64)
+function getEwaldparams(framework::Framework, sr_cutoff::Float64, precision::Float64; verboseflag::Bool=false)
     """
-    alpha: convergence parameter (1/A^2)
-    rc: short range cutoff (A)
-    k_reps: number of replications in k-space
-
-    From Understanding Molecular Simulation by Frenkel and Smit
-    Chapter 12.1 Long range interactions
+    Goal is to get the following EWald summation parameters:
+        alpha: convergence parameter (1/A^2)
+        k_reps: number of replications in k-space
+    
+    from the following:
+        framework: crystal structure
+        sr_cutoff: short-range cutoff (A)
+        precision: EWald precision desired
     """
-    sqrt_alpha = (framework.natoms * pi^3 / framework.v_unitcell^2) ^ (1 / 6)
-    # k I think there is a mistake in Berend's book... 
-    # this alpha is different from one in Ewald derivation by square
-
-    g(x) = exp(- x^2) / x^2 - precision
-    s = fzero(g, 0.1)
-    rc = s / sqrt_alpha
-
-    k_reps = [framework.a, framework.b, framework.c] * s * sqrt_alpha / pi
-
-    @printf("rc = %f A,  alpha = %f 1/A^2, kreps = [%f, %f, %f]\n", rc, sqrt_alpha ^ 2, k_reps[1], k_reps[2], k_reps[3])
-    return sqrt_alpha ^ 2, rc, k_reps
+    ###
+    ###  Rules to determine EWald parameters for a given precision (from DLPoly)
+    ###  http://www.ccp5.ac.uk/DL_POLY_CLASSIC/FAQ/FAQ2.shtml
+    ###
+    blah = sqrt(abs(log(precision * sr_cutoff)))
+    # alpha parameter to determine width of Gaussian
+    alpha = sqrt(abs(log(precision * sr_cutoff * blah))) / sr_cutoff
+    # number of replications in k-space for long-range interactions
+    blah_ = sqrt(-log(precision * sr_cutoff * (2.0 * blah * alpha)^2))
+    k_reps = Array(Int64, 3)
+    k_reps[1] = round(Int64, 0.25 + framework.a * alpha * blah_ / pi)
+    k_reps[2] = round(Int64, 0.25 + framework.b * alpha * blah_ / pi)
+    k_reps[3] = round(Int64, 0.25 + framework.c * alpha * blah_ / pi)
+    alpha = alpha^2 # Our alpha is different
+    if verboseflag
+        @printf("alpha convergence parameter = %f, k_reps = [%d, %d, %d] for Ewald precision %f and sr_cutoff = %f A\n", 
+                alpha, k_reps[1], k_reps[2], k_reps[3], precision, sr_cutoff)
+    end
+    return alpha, k_reps
 end
