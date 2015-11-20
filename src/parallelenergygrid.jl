@@ -9,9 +9,9 @@ function evaluate_expressions_on_all_cores(;kwargs...)
     end
 end
 
-function parallel_writegrid(adsorbatename::String, 
-                            structurename::String, 
-                            forcefieldname::String; 
+function parallel_writegrid(adsorbatename::AbstractString, 
+                            structurename::AbstractString, 
+                            forcefieldname::AbstractString; 
                             gridspacing=0.1, 
                             cutoff=12.5, 
                             temperature::Float64=-1.0, 
@@ -22,7 +22,7 @@ function parallel_writegrid(adsorbatename::String,
 
     The grid is written to a file `structurename.cube`, in Gaussian cube format. The units of the energy are kJ/mol.
 
-    :param: String adsorbate: the name of the adsorbate molecule, corresponding to the forcefield file
+    :param: AbstractString adsorbate: the name of the adsorbate molecule, corresponding to the forcefield file
     """
     @printf("Number of parallel cores: %d\n", nprocs())
     require("src/framework.jl")  # these statements load these files on all cores

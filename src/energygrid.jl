@@ -9,9 +9,9 @@ include("getEwaldparams.jl")
 using Optim
 
 
-function write_vdW_grid(adsorbatename::String, 
-                   structurename::String, 
-                   forcefieldname::String; 
+function write_vdW_grid(adsorbatename::AbstractString, 
+                   structurename::AbstractString, 
+                   forcefieldname::AbstractString; 
                    gridspacing=0.1, 
                    cutoff=12.5, 
                    temperature::Float64=-1.0, 
@@ -22,7 +22,7 @@ function write_vdW_grid(adsorbatename::String,
 
     The grid is written to a file `structurename.cube`, in Gaussian cube format. The units of the energy are kJ/mol.
 
-    :param: String adsorbate: the name of the adsorbate molecule, corresponding to the forcefield file
+    :param: AbstractString adsorbate: the name of the adsorbate molecule, corresponding to the forcefield file
     """
     @printf("Constructing framework object for %s...\n", structurename)
     framework = Framework(structurename)
@@ -138,7 +138,7 @@ function write_vdW_grid(adsorbatename::String,
     @printf("\tDone.\nGrid available in %s\n", gridfilename)
 end
 
-function write_electrostatic_grid(structurename::String, 
+function write_electrostatic_grid(structurename::AbstractString, 
                    gridspacing=0.1, 
                    sr_cutoff=12.5;
                    EWald_precision=1e-6)
@@ -222,8 +222,8 @@ type Grid
     """
     For interally storing energy grid
     """
-    structurename::String
-    forcefieldname::String
+    structurename::AbstractString
+    forcefieldname::AbstractString
 
     # number of grid points
     N_x::Int
@@ -243,7 +243,7 @@ type Grid
     min_energy::Function  # get minimum energy among grid points
     index_to_fractional_coord::Function
 
-    function Grid(adsorbate::String, structurename::String, forcefieldname::String)
+    function Grid(adsorbate::AbstractString, structurename::AbstractString, forcefieldname::AbstractString)
         """
         Constructor for Grid. Loads previously written cube file
         """

@@ -251,7 +251,7 @@ function _generate_epsilons_sigmas(framework::Framework, forcefields::Array{Forc
     return  epsilons, sigmas
 end
 
-function vdW_energy_of_adsorbate_config(adsorbate::Adsorbate, structurename::String, forcefieldname::String; cutoff::Float64=12.5)
+function vdW_energy_of_adsorbate_config(adsorbate::Adsorbate, structurename::AbstractString, forcefieldname::AbstractString; cutoff::Float64=12.5)
     """
     Get energy of adsorbate configuration (pass adsorbate object
     """
@@ -277,10 +277,10 @@ function vdW_energy_of_adsorbate_config(adsorbate::Adsorbate, structurename::Str
 end
 
 
-function vdW_energy_of_adsorbate(adsorbatename::String,
+function vdW_energy_of_adsorbate(adsorbatename::AbstractString,
                         fractional_translations::Array{Float64},
-                        structurename::String,
-                        forcefieldname::String;
+                        structurename::AbstractString,
+                        forcefieldname::AbstractString;
                         cutoff::Float64=12.5,
                         num_rotation_samples::Int=500,
                         temperature::Float64=-1.0,
@@ -368,9 +368,9 @@ function vdW_energy_of_adsorbate(adsorbatename::String,
     return E  # in (Kelvin)
 end
 
-function find_min_energy_position(structurename::String, 
-                                  forcefieldname::String, 
-                                  adsorbatename::String,
+function find_min_energy_position(structurename::AbstractString, 
+                                  forcefieldname::AbstractString, 
+                                  adsorbatename::AbstractString,
                                   x_f_start::Array{Float64};
                                   num_rotation_samples::Int=200,
                                   temperature::Float64=-1.0,
@@ -434,7 +434,8 @@ function find_min_energy_position(structurename::String,
     while ((sum(res.minimum .< [-0.000001, -0.00001, -0.000001]) != 0) | (sum(res.minimum .> [1.00001, 1.000001, 1.000010]) != 0))
         for i = 1:3
             x_f_start[i] = mod(res.minimum[i], 1.0)
-            x_f_start[i] += 0.05 * rand()
+            x_f_start[i] += 0.1 * rand()
+            x_f_start[i] = mod(x_f_start[i], 1.0)
         end
         
         @printf("Fractional coords went outside of unit box; trying another starting point (%f, %f, %f)\n", x_f_start[1], x_f_start[2], x_f_start[3])
@@ -448,8 +449,8 @@ function find_min_energy_position(structurename::String,
 end
 
 function get_optimal_rotation(adsorbate::Adsorbate, 
-                              structurename::String, 
-                              forcefieldname::String; 
+                              structurename::AbstractString, 
+                              forcefieldname::AbstractString; 
                               num_rotation_samples::Int=500, 
                               cutoff::Float64=12.5)
     """

@@ -9,10 +9,10 @@ type Forcefield
     Stores attributes of a Lennard-Jones force field
     """
     # name of force field
-    name::String
+    name::AbstractString
 
     # bead in adsorbate molecule
-    bead::String
+    bead::AbstractString
 
     # number of interactions in the forcefield
     ninteractions::Int
@@ -28,13 +28,13 @@ type Forcefield
     cutoff::Float64
 
     # mixing rules to get bead-solid interactions
-    mixingrules::String
+    mixingrules::AbstractString
     
     print_info::Function
     
     # constructor
-    function Forcefield(name::String, 
-                        bead::String; 
+    function Forcefield(name::AbstractString, 
+                        bead::AbstractString; 
                         cutoff::Float64=12.5,
                         mixingrules="Lorenz-Berthelot")
         """

@@ -8,7 +8,7 @@ type Framework
     """
     Stores info of a crystal structure
     """
-    structurename::String
+    structurename::AbstractString
     # unit cell sizes (Angstrom)
     a::Float64
     b::Float64
@@ -26,7 +26,7 @@ type Framework
     natoms::Int
     
     # atom identites
-    atoms::Array{String}
+    atoms::Array{AbstractString}
     
     # fractional coordinates (3 by natoms)
     fractional_coords::Array{Float64}
@@ -43,15 +43,17 @@ type Framework
 
     # functions
     crystaldensity::Function
+    m_unitcell::Function  # mass of the unit cell (amu)
     chemicalformula::Function
     check_for_atom_overlap::Function
     check_for_charge_neutrality::Function
     print_info::Function
+    get_COM::Function
 
     # constructor
-    function Framework(structurename::String)
+    function Framework(structurename::AbstractString)
         """
-        :param String structurename: name of structure. Will try to import file structurename.cssr
+        :param AbstractString structurename: name of structure. Will try to import file structurename.cssr
         """
         framework = new()
         framework.structurename = structurename
@@ -64,15 +66,15 @@ type Framework
 
         # get unit cell sizes
         line = split(readline(f)) # first line is (a, b, c)
-        framework.a = float(line[1])
-        framework.b = float(line[2])
-        framework.c = float(line[3])
+        framework.a = parse(Float64, line[1])
+        framework.b = parse(Float64, line[2])
+        framework.c = parse(Float64, line[3])
 
         # get unit cell angles. Convert to radians
         line = split(readline(f))
-        framework.alpha = float(line[1]) * pi / 180.0
-        framework.beta = float(line[2]) * pi / 180.0
-        framework.gamma = float(line[3]) * pi / 180.0
+        framework.alpha = parse(Float64, line[1]) * pi / 180.0
+        framework.beta = parse(Float64, line[2]) * pi / 180.0
+        framework.gamma = parse(Float64, line[3]) * pi / 180.0
 
         # write transformation matrix from fractional to cartesian coords
         v_unit_piped = sqrt(1.0 - cos(framework.alpha)^2 - cos(framework.beta)^2 - cos(framework.gamma)^2 +
@@ -116,7 +118,7 @@ type Framework
         
         # get atom count, initialize arrays holding coords
         framework.natoms = int(split(readline(f))[1])
-        framework.atoms = Array(String, framework.natoms)
+        framework.atoms = Array(AbstractString, framework.natoms)
         framework.charges = Array(Float64, framework.natoms)
         framework.fractional_coords = zeros(Float64, 3, framework.natoms)  # fractional coordinates
 
@@ -127,34 +129,46 @@ type Framework
 
             framework.atoms[a] = line[2]
 
-            framework.fractional_coords[1, a] = float(line[3]) % 1.0 # wrap to [0,1]
-            framework.fractional_coords[2, a] = float(line[4]) % 1.0
-            framework.fractional_coords[3, a] = float(line[5]) % 1.0
+            framework.fractional_coords[1, a] = parse(Float64, line[3]) % 1.0 # wrap to [0,1]
+            framework.fractional_coords[2, a] = parse(Float64, line[4]) % 1.0
+            framework.fractional_coords[3, a] = parse(Float64, line[5]) % 1.0
 
-            framework.charges[a] = float(line[14])
+            framework.charges[a] = parse(Float64, line[14])
         end
         
         close(f) # close file
+
+        framework.m_unitcell = function()
+            """
+            Get mass of unit cell (amu)
+            """
+            # get atomic mass dictionary
+            if ! isfile("data/atomicmasses.csv")
+                print("Atomic masses file data/atomicmasses.csv not present")
+            end
+            df = readtable("data/atomicmasses.csv")
+            mass_dict = Dict()
+            for i = 1:size(df, 1)
+                mass_dict[df[:atom][i]] = df[:mass][i] 
+            end
+            
+            # get mass of unit cell
+            mass = 0.0 # count mass of all atoms here
+            for a = 1:framework.natoms
+                if ~ (haskey(mass_dict, framework.atoms[a]))
+                    error(@sprintf("Framework atom %s not present in data/atomicmasses.cv file", 
+                                framework.atoms[a]))
+                end
+                mass += mass_dict[framework.atoms[a]]
+            end
+            return mass  # amu
+        end
         
         framework.crystaldensity = function ()
             """
             Computes crystal density of the framework (kg/m3)
             """
-            if ! isfile("data/atomicmasses.csv")
-                print("Atomic masses file data/atomicmasses.csv not present")
-            end
-            df = readtable("data/atomicmasses.csv")
-
-            mass = 0.0 # count mass of all atoms here
-            for a = 1:framework.natoms
-                if ~ (framework.atoms[a] in df[:atom])
-                    error(@sprintf("Framework atom %s not present in data/atomicmasses.cv file", 
-                                framework.atoms[a]))
-                end
-                mass += df[df[:atom] .== framework.atoms[a], :][:mass][1]
-            end
-            
-            return mass / framework.v_unitcell * 1660.53892  # --> kg/m3
+            return framework.m_unitcell() / framework.v_unitcell * 1660.53892  # --> kg/m3
         end  # end crystaldensity
 
         framework.chemicalformula = function ()
@@ -251,6 +265,44 @@ type Framework
             @printf("Total charge: %f\n", sum(framework.charges))
         end
 
+        framework.get_COM = function()
+            """
+            Compute center of mass
+            """
+            com = [0.0, 0.0, 0.0]
+            # create mass dictionary
+            if ! isfile("data/atomicmasses.csv")
+                print("Atomic masses file data/atomicmasses.csv not present")
+            end
+            df = readtable("data/atomicmasses.csv")
+            mass_dict = Dict()
+            for i = 1:size(df, 1)
+                mass_dict[df[:atom][i]] = df[:mass][i] 
+            end
+
+            # get masses
+            masses = map(x -> mass_dict[x], framework.atoms)
+
+            # wrap fractional coords onto circle
+            eta = cos(framework.fractional_coords * 2 * pi)
+            zeta = sin(framework.fractional_coords * 2 * pi)
+            # take mean
+            eta_hat = mean(eta, 2)
+            zeta_hat = mean(zeta, 2)
+            tol = 1e-5  # tolerance for declaring zero (atan unstable)
+            for i = 1:3
+                if ((eta_hat[i] < tol) & (eta_hat[i] > -tol))
+                    eta_hat[i] = 0.0
+                end
+                if ((zeta_hat[i] < tol) & (zeta_hat[i] > -tol))
+                    zeta_hat[i] = 0.0
+                end
+                com[i] = (atan2(-zeta_hat[i], -eta_hat[i]) + pi) / (2.0 * pi)
+            end
+
+            return com
+        end
+
         framework.check_for_atom_overlap(0.1)
         framework.check_for_charge_neutrality(0.001)
 
@@ -258,7 +310,7 @@ type Framework
     end  # end constructor
 end  # end Framework type
 
-function write_to_cssr(framework::Framework, filename::String)
+function write_to_cssr(framework::Framework, filename::AbstractString)
     """
     Write framework object to .cssr with desired filename
     """
@@ -356,10 +408,20 @@ function consolidate_atoms_with_same_charge(framework::Framework; decimal_tol::I
         end
     end
     new.charges = rounded_charges
+    
+    # ensure charge neutrality
+    shift_charges_by = sum(new.charges) / new.natoms
+    new.charges = new.charges - shift_charges_by
+    
+    # update charges
+    for elem in keys(charge_dict)
+        charge_dict[elem] -= shift_charges_by
+    end
+
     return new, charge_dict, element_dict
 end
     
-function write_unitcell_boundary_vtk(frameworkname::String)
+function write_unitcell_boundary_vtk(frameworkname::AbstractString)
     """
     Write unit cell boundary as a .vtk file for visualizing the unit cell.
     """
@@ -391,21 +453,28 @@ function write_unitcell_boundary_vtk(frameworkname::String)
     @printf(".vtk available at: %s\n", homedir() * "/PEGrid_output/" * framework.structurename * ".vtk")
 end
 
-function replicate_cssr_to_xyz(frameworkname::String; rep_factors::Array{Int} = [1, 1, 1])
+function replicate_cssr_to_xyz(frameworkname::AbstractString; rep_factors::Array{Int} = [1, 1, 1], alldirections::Bool=true)
     """
     Converts a .cssr crystal structure file to .xyz
     Replicates unit cell into rep_factor by rep_factor by rep_factor supercell.
     The primitive unit cell will be in the middle.
 
-    :param String frameworkname: name of crystal structure
+    :param AbstractString frameworkname: name of crystal structure
     :param Array{Int} rep_factor: number of times to replicate unit cell
+    :param Bool alldirections: replicate in all directions if true. else, just 0 to positive reps
     """
     framework = Framework(frameworkname)
     if ! isdir(homedir() * "/PEGrid_output")
        mkdir(homedir() * "/PEGrid_output") 
     end
     xyz_file = open(homedir() * "/PEGrid_output/" * framework.structurename * ".xyz", "w")
-    n = framework.natoms * (2 * rep_factors[1] + 1) * (2 * rep_factors[2] + 1) * (2 * rep_factors[3] + 1)
+    if alldirections
+        n = framework.natoms * (2 * rep_factors[1] + 1) * (2 * rep_factors[2] + 1) * (2 * rep_factors[3] + 1)
+        lower_bound_reps = -rep_factors
+    else
+        n = framework.natoms * (rep_factors[1] + 1) * (rep_factors[2] + 1) * (rep_factors[3] + 1)
+        lower_bound_reps = [0, 0, 0]
+    end
     @printf(xyz_file, "%d\n\n", n)
     
     for a = 1:framework.natoms
@@ -417,10 +486,11 @@ function replicate_cssr_to_xyz(frameworkname::String; rep_factors::Array{Int} = 
 
     # print atoms in neighboring unit cells
     for a = 1:framework.natoms
-        for rep_x = -rep_factors[1]:rep_factors[1]
-            for rep_y = -rep_factors[2]:rep_factors[2]
-                for rep_z = -rep_factors[3]:rep_factors[3]
+        for rep_x = lower_bound_reps[1]:rep_factors[1]
+            for rep_y = lower_bound_reps[2]:rep_factors[2]
+                for rep_z = lower_bound_reps[3]:rep_factors[3]
                     if (rep_x == 0) & (rep_y == 0) & (rep_z == 0)
+                        # already printed this above
                         continue
                     end
                     # fractional coord
@@ -434,4 +504,4 @@ function replicate_cssr_to_xyz(frameworkname::String; rep_factors::Array{Int} = 
     end
     close(xyz_file)
     @printf("Replicated .xyz in %s\n", homedir() * "/PEGrid_output/" * framework.structurename * ".xyz")
-end
+end;
