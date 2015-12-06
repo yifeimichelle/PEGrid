@@ -117,7 +117,7 @@ type Framework
                 dot(framework.f_to_cartesian_mtrx[:, 3], cross(framework.f_to_cartesian_mtrx[:, 1], framework.f_to_cartesian_mtrx[:, 2]))
         
         # get atom count, initialize arrays holding coords
-        framework.natoms = int(split(readline(f))[1])
+        framework.natoms = parse(Int, split(readline(f))[1])
         framework.atoms = Array(AbstractString, framework.natoms)
         framework.charges = Array(Float64, framework.natoms)
         framework.fractional_coords = zeros(Float64, 3, framework.natoms)  # fractional coordinates
@@ -217,6 +217,7 @@ type Framework
             :param Float64 distance_tol: tolerance for when an atom is considered to overlap
             :returns false if no overlap
             """
+            overlap_flag = false
             for i = 1:framework.natoms
                 x_i = framework.f_to_cartesian_mtrx * framework.fractional_coords[:, i]
                 # loop over adjacent unit cells
@@ -232,14 +233,14 @@ type Framework
                                 if (r < distance_tol)
                                     @printf("WARNING: overlap found")
                                     @printf("Atom %d and %d are a distance %f apart.\n", i, j, r)
-                                    return true
+                                    overlap_flag = true
                                 end
                             end  # loop over atom j
                         end  # loop over z uc
                     end  # loop over y uc
                 end  # loop over x uc
             end  # loop over atom i
-            return false
+            return overlap_flag
         end  # end check_for_atom_overlap
 
         framework.check_for_charge_neutrality = function(tol::Float64)
