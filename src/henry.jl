@@ -4,14 +4,15 @@
 ###
 include("energyutils.jl")
 
-function henry(adsorbatename::String, 
-               structurename::String, 
-               forcefieldname::String, 
+function henry(adsorbatename::AbstractString, 
+               structurename::AbstractString, 
+               forcefieldname::AbstractString, 
                temperature::Float64; 
                insertions_per_A3::Int=750, 
                cutoff::Float64=12.5, 
                verboseflag::Bool=false, 
-               write_to_file=false)
+               write_to_file=false,
+               E_threshold_for_pore_volume=0.0)
     """
     Compute Henry constant and ensemble average energy of an adsorbate inside a structure via Widom insertions
 
@@ -26,7 +27,7 @@ function henry(adsorbatename::String,
         @printf("Constructing adsorbate %s...\n", adsorbatename)
     end
     adsorbate = Adsorbate(adsorbatename)
-    adsorbate_min_config = deepcopy(adsorbate)  # preallocate
+ #     adsorbate_min_config = deepcopy(adsorbate)  # preallocate
     if (adsorbate.nbeads > 1) & (temperature == -1.0)
         error("Provide temperature for Boltzmann weighted rotations, nbeads > 1 in adsorbate.")
     end
@@ -46,7 +47,7 @@ function henry(adsorbatename::String,
     epsilons, sigmas = _generate_epsilons_sigmas(framework, forcefields)
     
     # get unit cell replication factors for periodic BCs
-    rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
+    rep_factors = get_replication_factors(framework, cutoff)
     if verboseflag
         @printf("Unit cell replication factors for LJ cutoff of %.2f A: %d by %d by %d\n", cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
     end
@@ -58,6 +59,9 @@ function henry(adsorbatename::String,
 
     # for keeping track of minimum energy
     E_min = Inf  # pre-allocate E_min as inf
+
+    # for computing pore volume
+    n_accessible = 0
 
     boltzmann_factor_sum = 0.0  # \sum_i e^{-\beta E_i}
     boltzmann_weighted_energy_sum = 0.0  # \sum_i E_i e^{-\beta E_i}
@@ -72,7 +76,7 @@ function henry(adsorbatename::String,
         end
         
         # compute energy here
-        _energy = _energy_of_adsorbate!(adsorbate,
+        _energy = _vdW_energy_of_adsorbate!(adsorbate,
                                     epsilons,
                                     sigmas,
                                     framework,
@@ -84,10 +88,15 @@ function henry(adsorbatename::String,
         boltzmann_factor_sum += boltzmann_weight 
         boltzmann_weighted_energy_sum += boltzmann_weight * _energy 
 
-        # for calculating min energy pos
-        if (_energy < E_min)
-            E_min = _energy  # update minimum energy
-            adsorbate_min_config = deepcopy(adsorbate)
+ #         # for calculating min energy pos
+ #         if (_energy < E_min)
+ #             E_min = _energy  # update minimum energy
+ #             adsorbate_min_config = deepcopy(adsorbate)
+ #         end
+
+        # for calculating accessible pore volume
+        if (_energy < E_threshold_for_pore_volume)
+            n_accessible += 1
         end
     end
     
@@ -96,6 +105,7 @@ function henry(adsorbatename::String,
     @printf("%s Henry constant in %s at %.1f K = %f (mol/(m3-Pa))\n", adsorbatename, structurename, temperature, KH)
     @printf("\t<E> %f K = %f kJ/mol\n", avg_E, avg_E * 8.314 / 1000.0)
     @printf("Minimum energy encountered = %f kJ/mol\n", E_min * 8.314 / 1000.0)
+    @printf("Void fraction with energy threshold %f K: %f\n", E_threshold_for_pore_volume, n_accessible / num_insertions)
 
     # Write to file
     if write_to_file
@@ -109,7 +119,8 @@ function henry(adsorbatename::String,
         @printf(f, "<E> (kJ/mol) = %f\n", avg_E * 8.314 / 1000)
         @printf(f, "Min. E = %f kJ/mol\n", E_min * 8.314 / 1000.0)
         @printf(f, "KH, %s (mol/m3-Pa) = %e\n", adsorbatename, KH)
+        @printf(f, "Void fraction using threshold energy %f K: %f\n", E_threshold_for_pore_volume, n_accessible / num_insertions)
         close(f)
     end
-    return KH, avg_E, adsorbate_min_config 
+    return KH, avg_E #, adsorbate_min_config 
 end
