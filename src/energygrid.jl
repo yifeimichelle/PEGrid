@@ -709,10 +709,26 @@ type Grid
         grid.compute_henry_coefficient = function(temperature::Float64)
             """
             Compute Henry coefficient by integrating the grid.
+            KH = < e ^ {- E / (RT) } > / (RT)
 
             returns:
                 henry coefficient
             """
+            # do not consider grid points at the end of the cell, as these are redundant to the first face
+            # i.e. via periodic boundary conditions, grid.energies[1,1,1] = grid.energies[N_x, N_y, N_z]...
+            henry_coefficient = 0.0
+            for i = 2:grid.N_x
+                for j = 2:grid.N_y
+                    for k = 2:grid.N_z
+                        henry_coefficient += exp(-grid.energies[i, j, k] * 1000.0 / 8.314 / temperature) 
+                    end
+                end
+            end
+            # divide by number of samples
+            henry_coefficient /= (grid.N_x - 1) * (grid.N_y - 1) * (grid.N_z - 1)
+            # divide by RT
+            henry_coefficient /= 8.314 * temperature
+            return henry_coefficient  # units: (mol/m3-Pa)
         end
         
         return grid
