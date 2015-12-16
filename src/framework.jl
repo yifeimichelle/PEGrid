@@ -7,14 +7,17 @@ using DataFrames
 type Framework
     """
     Stores info of a crystal structure
+
+    Constructed by reading a .cssr
     """
     structurename::AbstractString
-    # unit cell sizes (Angstrom)
+
+    # unit cell Bravais lattice size (Angstrom)
     a::Float64
     b::Float64
     c::Float64
 
-    # unit cell angles
+    # unit cell Bravais lattice angles
     alpha::Float64
     beta::Float64
     gamma::Float64
@@ -22,7 +25,7 @@ type Framework
     # volume of the unit cell (Angstrom^3)
     v_unitcell::Float64
 
-    # atom count (in primitive unit cell)
+    # atom count (in unit cell)
     natoms::Int
     
     # atom identites

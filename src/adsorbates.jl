@@ -16,7 +16,7 @@ function uniform_unit_vector_on_sphere()
 end
 
 type Adsorbate
-    name::String  # corresponds to name in force field
+    name::AbstractString  # corresponds to name in force field
     
     nbeads::Int  # number LJ spheres that the adsorbate consists of
 
@@ -24,7 +24,7 @@ type Adsorbate
     # convention: first bead is 0, 0, 0
     bead_xyz::Array{Float64}  # CARTESIAN (so irrespective of framework). shape = (3, nbeads)
     bead_xyz_COM_origin::Array{Float64}  # Cartesian coords where origin is center of mass
-    bead_names::Array{String}  # corresponds to name in force field
+    bead_names::Array{AbstractString}  # corresponds to name in force field
     COM::Array{Float64}  # store center of mass so we don't need to compute it each time
 
     translate_to::Function  # translate adsorbate by Cartesian vector x
@@ -35,7 +35,7 @@ type Adsorbate
     _get_COM::Function
     translate_COM_to_origin::Function  # set origin of coords at center of mass
 
-    function Adsorbate(name::String)
+    function Adsorbate(name::AbstractString)
         """
         Constructor
         """
@@ -52,8 +52,8 @@ type Adsorbate
                 adsorbate.name = split(line)[2]
             end
             if i == 2
-                adsorbate.nbeads = parseint(split(line)[2])
-                adsorbate.bead_names = String[]
+                adsorbate.nbeads = parse(Int, split(line)[2])
+                adsorbate.bead_names = AbstractString[]
                 adsorbate.bead_xyz = zeros(3, adsorbate.nbeads)
             end
             if i == 3
@@ -62,9 +62,9 @@ type Adsorbate
                 end
             end
             if i > 5
-                adsorbate.bead_xyz[1, i - 5] = parsefloat(split(line, ",")[1])
-                adsorbate.bead_xyz[2, i - 5] = parsefloat(split(line, ",")[2])
-                adsorbate.bead_xyz[3, i - 5] = parsefloat(replace(split(line, ",")[3], "\n", ""))
+                adsorbate.bead_xyz[1, i - 5] = parse(Float64, split(line, ",")[1])
+                adsorbate.bead_xyz[2, i - 5] = parse(Float64, split(line, ",")[2])
+                adsorbate.bead_xyz[3, i - 5] = parse(Float64, replace(split(line, ",")[3], "\n", ""))
             end
         end
 
@@ -162,7 +162,7 @@ type Adsorbate
             adsorbate.bead_xyz = broadcast(+,  R * adsorbate.bead_xyz_COM_origin, adsorbate.COM)
         end
 
-        adsorbate.write_to_xyz = function (filename::String)
+        adsorbate.write_to_xyz = function (filename::AbstractString)
             """
             Write adsorbate to .xyz file
             """
