@@ -62,7 +62,7 @@ function parallel_writegrid(adsorbatename::AbstractString,
     end
 
     # get unit cell replication factors for periodic BCs on all cores
-    @everywhere rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
+    @everywhere rep_factors = get_replication_factors(framework, cutoff)
     @printf("Unit cell replication factors for LJ cutoff of %.2f A: %d by %d by %d\n", cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
 
     # get array of framework atom positions and corresponding epsilons and sigmas for speed on all cores
@@ -73,9 +73,9 @@ function parallel_writegrid(adsorbatename::AbstractString,
     ### This is all done on current core only. e.g. writing to grid file
 
     # how many grid points in each direction? 
-    N_x = int(framework.a / gridspacing) + 1
-    @everywhere N_y = int(framework.b / gridspacing) + 1
-    @everywhere N_z = int(framework.c / gridspacing) + 1
+    N_x = round(Int, framework.a / gridspacing) + 1
+    @everywhere N_y = round(Int, framework.b / gridspacing) + 1
+    @everywhere N_z = round(Int, framework.c / gridspacing) + 1
     @printf("Grid is %d by %d by %d points, a total of %d grid points.\n", N_x, N_y, N_z, N_x*N_y*N_z)
 
     # fractional grid point spacing. Think of grid points as center of voxels.
