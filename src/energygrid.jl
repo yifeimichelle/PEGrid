@@ -273,29 +273,29 @@ function recursively_navigate_graph!(segment_no::Int,
             edge.attributes["visited"] = true
             return "channel"
         end
-        
-        # check if this edge is a connection from segment_no to edge.target
-        if edge.source == segment_no
-            # if so, travel along this edge
-            edge.attributes["visited"] = true
-           
-            # in the process of traveling along the edge, we entered a different unit cell
-            for i = 1:3
-                unit_cell[i] += edge.attributes["direction"][i]
-            end
-            
-            # has the target segment been visited before?
-            if ! segment_visit_status[edge.target]
-                # if not, use recursion to take another step along the next edge
-                return recursively_navigate_graph!(edge.target, graph, unit_cell, segment_visit_status)
-            else
-                # if this segment has been visited, don't visit it again, but do check if we have ended up
-                # in a different unit cell
-                if unit_cell != [0, 0, 0]
-                    return "channel"
-                end
-            end
-        end  # end loop over if this edge emenates from segment_no
+        # TODO: fix this.       
+ #         # check if this edge is a connection from segment_no to edge.target
+ #         if edge.source == segment_no
+ #             # if so, travel along this edge
+ #             edge.attributes["visited"] = true
+ #            
+ #             # in the process of traveling along the edge, we entered a different unit cell
+ #             for i = 1:3
+ #                 unit_cell[i] += edge.attributes["direction"][i]
+ #             end
+ #             
+ #             # has the target segment been visited before?
+ #             if ! segment_visit_status[edge.target]
+ #                 # if not, use recursion to take another step along the next edge
+ #                 return recursively_navigate_graph!(edge.target, graph, unit_cell, segment_visit_status)
+ #             else
+ #                 # if this segment has been visited, don't visit it again, but do check if we have ended up
+ #                 # in a different unit cell
+ #                 if unit_cell != [0, 0, 0]
+ #                     return "channel"
+ #                 end
+ #             end
+ #         end  # end loop over if this edge emenates from segment_no
     end  # end loop over edges
     # if made it this far, haven't found it to be a channel...
     return "pocket"
@@ -380,7 +380,7 @@ type Grid
             for j in 1:grid.N_y  # loop over y_f-grid points
                 for k in 1:grid.N_z  # loop over z_f-grid points
 
-                    grid.energies[i, j, k] = float(split(line)[counter])
+                    grid.energies[i, j, k] = parse(Float64, split(line)[counter])
                     counter += 1
                     
                     if (k % 6) == 0
@@ -634,6 +634,7 @@ type Grid
 
             Overwrite inaccessible grid points with large energy
             """
+            @printf("Warning, this code does not catch edge cases. Do not trust it; you must viz the grid to see if it successfully blocked the pockets. Will fix soon.\n")
             verbose_flag = true
             if verbose_flag
                 @printf("Flood fill algorithm initiated for segmentations...\n")

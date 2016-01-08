@@ -179,7 +179,7 @@ type Framework
             Get chemical formula of structure
             """
             # use dictionary to count atom types
-            atom_dict = Dict(unique(framework.atoms), zeros(Int, length(unique(framework.atoms))))
+            atom_dict = Dict(zip(unique(framework.atoms), zeros(Int, length(unique(framework.atoms)))))
             for i = 1:framework.natoms
                 atom_dict[framework.atoms[i]] += 1
             end

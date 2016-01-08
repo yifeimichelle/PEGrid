@@ -1,8 +1,8 @@
 include("energyutils.jl")
 
 
-function characterize_point(structurename::String, 
-                        forcefieldname::String, 
+function characterize_point(structurename::AbstractString, 
+                        forcefieldname::AbstractString, 
                         adsorbate::Adsorbate;
                         r_bins::Array{Float64}=linspace(0, 12.5),
                         cutoff::Float64=12.5,
@@ -30,7 +30,7 @@ function characterize_point(structurename::String,
     end
     
     # get unit cell replication factors for periodic BCs
-    rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
+    rep_factors = get_replication_factors(framework, cutoff)
     @printf("\tUnit cell replication factors for cutoff radius %f A: %d x %d x %d\n", cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
     
     # get position array and epsilons/sigmas for easy computation
@@ -110,7 +110,7 @@ function characterize_point(structurename::String,
     if ! isdir(homedir() * "/PEGrid_output/energycontributions")
        mkdir(homedir() * "/PEGrid_output/energycontributions") 
     end
-    energyfile = open(homedir() * "/PEGrid_output/energycontributions/" * structurename * "_" * adsorbate.name * ".csv", "w")
+    energyfile = open(homedir() * "/PEGrid_output/energycontributions/" * structurename * "_" * adsorbate.name * "_" * forcefieldname * ".csv", "w")
     @printf(energyfile, "Binding site at fractional point: [ ")
     for b = 1:adsorbate.nbeads
         @printf(energyfile, "(%f, %f, %f) ", adsorbate.bead_xyz[1, b],  adsorbate.bead_xyz[2, b], adsorbate.bead_xyz[3, b])
@@ -158,8 +158,8 @@ end
 
 function find_radius_where_most_energy_is(x_f::Array{Float64},
                                           fraction::Float64,
-                                          structurename::String, 
-                                          forcefieldname::String, 
+                                          structurename::AbstractString, 
+                                          forcefieldname::AbstractString, 
                                           adsorbate::Adsorbate;
                                           cutoff::Float64=12.5,
                                           verbose_flag::Bool=false)
@@ -179,13 +179,13 @@ function find_radius_where_most_energy_is(x_f::Array{Float64},
     end
     
     # get unit cell replication factors for periodic BCs
-    rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, cutoff)
+    rep_factors = get_replication_factors(framework, cutoff)
     
     # get epsilons/sigmas for easy computation
     epsilons, sigmas = _generate_epsilons_sigmas(framework, forcefields)
 
     # get energy at this point
-    E = _energy_of_adsorbate!(adsorbate,
+    E = _vdW_energy_of_adsorbate!(adsorbate,
             epsilons, 
             sigmas,
             framework,
@@ -195,7 +195,7 @@ function find_radius_where_most_energy_is(x_f::Array{Float64},
     cutoffs = linspace(1.0, cutoff, 150)
 
     for i = 1:length(cutoffs)
-        E_here = _energy_of_adsorbate!(adsorbate,
+        E_here = _vdW_energy_of_adsorbate!(adsorbate,
                 epsilons, 
                 sigmas,
                 framework,
@@ -209,7 +209,7 @@ function find_radius_where_most_energy_is(x_f::Array{Float64},
     end
 end
 
-function write_xyz_of_sphere(structurename::String, 
+function write_xyz_of_sphere(structurename::AbstractString, 
             x_f::Float64, y_f::Float64, z_f::Float64, 
             r::Float64; adsorbate=None)
     """
@@ -229,10 +229,10 @@ function write_xyz_of_sphere(structurename::String,
     framework = Framework(structurename)
 
     # get unit cell replication factors for periodic BCs
-    rep_factors = get_replication_factors(framework.f_to_cartesian_mtrx, r)
+    rep_factors = get_replication_factors(framework, r)
   
     # store atoms inside the sphere here
-    atomtype = String[]
+    atomtype = AbstractString[]
     x_ = Float64[]
     y_ = Float64[]
     z_ = Float64[]
