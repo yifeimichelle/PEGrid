@@ -1,8 +1,120 @@
 ###
 #   Author: Cory M. Simon (CoryMSimon@gmail.com)
 ###
+ # module Framework
+ # 
+ # export Framework, write_to_cssr, replicate_cssr_to_xyz, shift_unit_cell, consolidate_atoms_with_same_charge, write_unitcell_boundary_vtk, replicate_cssr_to_xyz
+
 using DataFrames
 
+
+function read_crystal_file(structurename::AbstractString, file_extension::AbstractString)
+    """
+    Read crystal structure file.
+    file_extension in ["cif", "cssr"]
+    """
+    @assert(file_extension in ["cif", "cssr"], "Reads only cif or cssr")
+
+    data = Dict()  # store all data here and return later
+
+    atoms = AbstractString[]
+    xf = Float64[]
+    yf = Float64[]
+    zf = Float64[]
+    charges = Float64[]
+    
+    # open crystal structure file and read its lines
+    f = open("data/structures/" * structurename * "." * file_extension)
+    if ~ isfile("data/structures/" * structurename * "." * file_extension)
+        @printf("Crystal structure file %s not present in data/structures/", structurename * "." * file_extension)
+    end
+    lines = readlines(f)
+
+    if file_extension == "cif"
+        loop_starts = -1
+        for i = 1:length(lines)
+            line = split(lines[i])
+            if line[1] == "_symmetry_space_group_name_H-M"
+                @assert(line[2] * line[3] == "'P1'", ".cif must have P1 symmetry.\n")
+            end
+            
+            for axis in ["a", "b", "c"]
+                if line[1] == @sprintf("_cell_length_%s", axis)
+                    data[axis] = parse(Float64, line[2])
+                end
+            end
+            for angle in ["alpha", "beta", "gamma"]
+                if line[1] == @sprintf("_cell_angle_%s", angle)
+                    data[angle] = parse(Float64, line[2]) * pi / 180.0
+                end
+            end
+
+            if (line[1] == "loop_")
+                next_line = split(lines[i+1])
+                if (next_line[1] == "_atom_site_label")
+                    loop_starts = i + 1
+                    break
+                end
+            end
+        end  # end loop over lines
+
+        # broke the loop. so loop_starts is line where "_loop" first starts
+        next_lines = ["_atom_site_label", "_atom_site_fract_x", "_atom_site_fract_y", "_atom_site_fract_z", "_atom_site_charge"]
+        for i = 1:length(next_lines)
+            @assert(split(lines[loop_starts + i - 1])[1] == next_lines[i], "_loop needs label, frac_x, frac_y, frac_z, then site_charge.")
+        end
+
+        # now extract fractional coords of atoms and their charges
+        for i = loop_starts+length(next_lines):length(lines)
+            line = split(lines[i])
+            push!(atoms, line[1])
+            push!(xf, mod(parse(Float64, line[2]), 1.0))
+            push!(yf, mod(parse(Float64, line[3]), 1.0))
+            push!(zf, mod(parse(Float64, line[4]), 1.0))
+            push!(charges, parse(Float64, line[5]))
+            if length(line) != 5
+                break
+            end
+        end
+        data["natoms"] = length(xf)
+    end  # if file is .cif
+
+    if file_extension == "cssr"
+        # get unit cell sizes
+        line = split(lines[1]) # first line is (a, b, c)
+        data["a"] = parse(Float64, line[1])
+        data["b"] = parse(Float64, line[2])
+        data["c"] = parse(Float64, line[3])
+
+        # get unit cell angles. Convert to radians
+        line = split(lines[2])
+        data["alpha"] = parse(Float64, line[1]) * pi / 180.0
+        data["beta"] = parse(Float64, line[2]) * pi / 180.0
+        data["gamma"] = parse(Float64, line[3]) * pi / 180.0
+
+        data["natoms"] = parse(Int, split(lines[3])[1])
+
+        # read in atoms and fractional coordinates
+        for a = 1:data["natoms"]
+            line = split(lines[4+a])
+            
+            push!(atoms, line[2])
+
+            push!(xf, mod(parse(Float64, line[3]), 1.0)) # wrap to [0,1]
+            push!(yf, mod(parse(Float64, line[4]), 1.0)) # wrap to [0,1]
+            push!(zf, mod(parse(Float64, line[5]), 1.0)) # wrap to [0,1]
+
+            push!(charges, parse(Float64, line[14]))
+        end
+    end
+
+    close(f) # close file
+
+    data["charges"] = charges
+    data["atoms"] = atoms
+    data["fractional_coords"] = transpose(hcat(xf, yf, zf))
+    return data
+end
 
 type Framework
     """
@@ -12,7 +124,7 @@ type Framework
     """
     structurename::AbstractString
 
-    # unit cell Bravais lattice size (Angstrom)
+    "unit cell Bravais lattice size (Angstrom)"
     a::Float64
     b::Float64
     c::Float64
@@ -54,35 +166,30 @@ type Framework
     get_COM::Function
 
     # constructor
-    function Framework(structurename::AbstractString)
+    function Framework(structurename::AbstractString, check_for_atom_overlap::Bool=true; file_extension::AbstractString="cssr")
         """
         :param AbstractString structurename: name of structure. Will try to import file structurename.cssr
         """
         framework = new()
         framework.structurename = structurename
-
-        # open crystal structure file
-        if ~ isfile("data/structures/" * structurename * ".cssr")
-            @printf("Crystal structure file %s not present in data/structures/", structurename * ".cssr")
-        end
-        f = open("data/structures/" * structurename * ".cssr")
+        
+        data = read_crystal_file(structurename, file_extension)
 
         # get unit cell sizes
-        line = split(readline(f)) # first line is (a, b, c)
-        framework.a = parse(Float64, line[1])
-        framework.b = parse(Float64, line[2])
-        framework.c = parse(Float64, line[3])
+        framework.a = data["a"]
+        framework.b = data["b"]
+        framework.c = data["c"]
 
-        # get unit cell angles. Convert to radians
-        line = split(readline(f))
-        framework.alpha = parse(Float64, line[1]) * pi / 180.0
-        framework.beta = parse(Float64, line[2]) * pi / 180.0
-        framework.gamma = parse(Float64, line[3]) * pi / 180.0
+        # get unit cell angles (Radians)
+        framework.alpha = data["alpha"]
+        framework.beta = data["beta"]
+        framework.gamma = data["gamma"]
 
-        # write transformation matrix from fractional to cartesian coords
+        # transformation matrices for fractional coords <--> cartesian coords
         v_unit_piped = sqrt(1.0 - cos(framework.alpha)^2 - cos(framework.beta)^2 - cos(framework.gamma)^2 +
                 2 * cos(framework.alpha) * cos(framework.beta) * cos(framework.gamma)) # volume of unit parallelpiped
         framework.v_unitcell = v_unit_piped * framework.a * framework.b * framework.c  # volume of unit cell
+
         framework.f_to_cartesian_mtrx = Array(Float64, (3,3))
         framework.cartesian_to_f_mtrx = Array(Float64, (3,3))
 
@@ -120,26 +227,11 @@ type Framework
                 dot(framework.f_to_cartesian_mtrx[:, 3], cross(framework.f_to_cartesian_mtrx[:, 1], framework.f_to_cartesian_mtrx[:, 2]))
         
         # get atom count, initialize arrays holding coords
-        framework.natoms = parse(Int, split(readline(f))[1])
-        framework.atoms = Array(AbstractString, framework.natoms)
-        framework.charges = Array(Float64, framework.natoms)
-        framework.fractional_coords = zeros(Float64, 3, framework.natoms)  # fractional coordinates
-
-        # read in atoms and fractional coordinates
-        readline(f) # waste a line
-        for a = 1:framework.natoms
-            line = split(readline(f))
-
-            framework.atoms[a] = line[2]
-
-            framework.fractional_coords[1, a] = parse(Float64, line[3]) % 1.0 # wrap to [0,1]
-            framework.fractional_coords[2, a] = parse(Float64, line[4]) % 1.0
-            framework.fractional_coords[3, a] = parse(Float64, line[5]) % 1.0
-
-            framework.charges[a] = parse(Float64, line[14])
-        end
-        
-        close(f) # close file
+        framework.natoms = data["natoms"]
+        framework.atoms = data["atoms"]
+        framework.charges = data["charges"]
+        framework.fractional_coords = data["fractional_coords"]
+        @assert(size(framework.fractional_coords) == (3, framework.natoms))
 
         framework.m_unitcell = function()
             """
@@ -306,8 +398,10 @@ type Framework
 
             return com
         end
-
-        framework.check_for_atom_overlap(0.1)
+        
+        if check_for_atom_overlap
+            framework.check_for_atom_overlap(0.1)
+        end
         framework.check_for_charge_neutrality(0.001)
 
         return framework
@@ -352,10 +446,11 @@ function shift_unit_cell(framework::Framework, xf_shift::Array{Float64})
             for i_y = -1:1
                 for i_z = -1:1
                     # only store if this shifted atom is in [0,1]^3
-                    pos = framework.fractional_coords[:, i] + xf_shift + [i_x, i_y, i_z]
-                    if ((sum(pos .> 1.0) == 0) & (sum(pos .< 0.0) == 0))
+                    pos = framework.fractional_coords[:, i] + xf_shift + 1.0 * [i_x, i_y, i_z]
+                    if ((sum(pos .> 1.0) == 0) && (sum(pos .< 0.0) == 0))
                         count += 1
-                        new.atoms[count] = new.atoms[i]
+                        println(count)
+                        new.atoms[count] = framework.atoms[i]
                         new.fractional_coords[1, count] = pos[1]
                         new.fractional_coords[2, count] = pos[2]
                         new.fractional_coords[3, count] = pos[3]
@@ -457,17 +552,16 @@ function write_unitcell_boundary_vtk(frameworkname::AbstractString)
     @printf(".vtk available at: %s\n", homedir() * "/PEGrid_output/" * framework.structurename * ".vtk")
 end
 
-function replicate_cssr_to_xyz(frameworkname::AbstractString; rep_factors::Array{Int} = [1, 1, 1], alldirections::Bool=true)
+function replicate_framework_to_xyz(framework::Framework; rep_factors::Array{Int} = [1, 1, 1], alldirections::Bool=true)
     """
-    Converts a .cssr crystal structure file to .xyz
+    Converts a Framework to an xyz file; replications of unit cell tunable.
     Replicates unit cell into rep_factor by rep_factor by rep_factor supercell.
-    The primitive unit cell will be in the middle.
+    The home unit cell will be in the middle.
 
-    :param AbstractString frameworkname: name of crystal structure
+    :param Framework framework: Framework object from PEGrid
     :param Array{Int} rep_factor: number of times to replicate unit cell
     :param Bool alldirections: replicate in all directions if true. else, just 0 to positive reps
     """
-    framework = Framework(frameworkname)
     if ! isdir(homedir() * "/PEGrid_output")
        mkdir(homedir() * "/PEGrid_output") 
     end
