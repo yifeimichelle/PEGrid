@@ -4,6 +4,7 @@
 include("framework.jl")
 include("forcefield.jl")
 include("adsorbates.jl")
+using Optim
 
 
 function _electrostatic_potential(xyz_coord::Array{Float64},
@@ -237,7 +238,7 @@ function _generate_epsilons_sigmas(framework::Framework, forcefields::Array{Forc
     # array of LJ parameters that correspond to framework atoms
     n_beads = length(forcefields)
     epsilons = Array(Float64, (framework.natoms, n_beads)) # make same shape as r2...
-    sigmas = Array(Float64, (framework.natoms, n_beads)) 
+    sigmas = Array(Float64, (framework.natoms, n_beads))
     for ff = 1:n_beads
         for i = 1:framework.natoms
             if ~ haskey(forcefields[ff].epsilon, framework.atoms[i])
@@ -368,7 +369,7 @@ function vdW_energy_of_adsorbate(adsorbatename::AbstractString,
     return E  # in (Kelvin)
 end
 
-function find_min_energy_position(structurename::AbstractString, 
+function find_min_energy_position(framework::Framework,
                                   forcefieldname::AbstractString, 
                                   adsorbatename::AbstractString,
                                   x_f_start::Array{Float64};
@@ -378,9 +379,6 @@ function find_min_energy_position(structurename::AbstractString,
     """
     Find minimum energy position of adsorbate in framework
     """
-    @printf("Constructing framework object for %s...\n", structurename)
-    framework = Framework(structurename)
-
     @printf("Constructing adsorbate %s...\n", adsorbatename)
     adsorbate = Adsorbate(adsorbatename)
     if (adsorbate.nbeads > 1) & (temperature == -1.0)
@@ -428,24 +426,30 @@ function find_min_energy_position(structurename::AbstractString,
         end
     end
     
-    res = optimize(E, x_f_start, method=:nelder_mead)
+    res = optimize(E, x_f_start, method=:l_bfgs)#method=:nelder_mead)
     
     # If optimization routine found a point outside of the home unit cell, try a new starting point
     while ((sum(res.minimum .< [-0.000001, -0.00001, -0.000001]) != 0) | (sum(res.minimum .> [1.00001, 1.000001, 1.000010]) != 0))
         for i = 1:3
             x_f_start[i] = mod(res.minimum[i], 1.0)
-            x_f_start[i] += 0.1 * rand()
+            x_f_start[i] += 0.05 * rand()
             x_f_start[i] = mod(x_f_start[i], 1.0)
         end
         
         @printf("Fractional coords went outside of unit box; trying another starting point (%f, %f, %f)\n", x_f_start[1], x_f_start[2], x_f_start[3])
-        res = optimize(E, x_f_start, method=:nelder_mead)
+        res = optimize(E, x_f_start, method=:l_bfgs)
  #         error("Fractional coords went outside of unit box; choose better starting point\n")
         # bring into home unit cell (Fractional coords in [0,1]) and perturb randomly
     end
-    @printf("Minimum E= %f at (%f, %f, %f)\n", res.f_minimum * 8.314/1000.0, res.minimum[1], res.minimum[2], res.minimum[3])
+    x_min = framework.f_to_cartesian_mtrx * res.minimum
+    @printf("Minimum E= %f kJ/mol at xf = (%f, %f, %f); x = (%f, %f, %f)\n", 
+        res.f_minimum * 8.314 / 1000.0, 
+        res.minimum[1], res.minimum[2], res.minimum[3],
+        x_min[1], x_min[2], x_min[3])
 
-    return res.f_minimum * 8.314 / 1000.0, res.minimum  # minE, x_min
+    return Dict("minE(kJ/mol)" => res.f_minimum * 8.314 / 1000.0, 
+                "xf_min" => res.minimum,
+                "x_min" => x_min)
 end
 
 function get_optimal_rotation(adsorbate::Adsorbate, 

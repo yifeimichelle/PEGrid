@@ -34,8 +34,11 @@ function read_crystal_file(structurename::AbstractString, file_extension::Abstra
         loop_starts = -1
         for i = 1:length(lines)
             line = split(lines[i])
+            if length(line) == 0
+                continue
+            end
             if line[1] == "_symmetry_space_group_name_H-M"
-                @assert(line[2] * line[3] == "'P1'", ".cif must have P1 symmetry.\n")
+                @assert(contains(line[2] * line[3], "P1"), ".cif must have P1 symmetry.\n")
             end
             
             for axis in ["a", "b", "c"]
@@ -59,20 +62,23 @@ function read_crystal_file(structurename::AbstractString, file_extension::Abstra
         end  # end loop over lines
 
         # broke the loop. so loop_starts is line where "_loop" first starts
-        next_lines = ["_atom_site_label", "_atom_site_fract_x", "_atom_site_fract_y", "_atom_site_fract_z", "_atom_site_charge"]
-        for i = 1:length(next_lines)
-            @assert(split(lines[loop_starts + i - 1])[1] == next_lines[i], "_loop needs label, frac_x, frac_y, frac_z, then site_charge.")
+        name_to_column = Dict{AbstractString, Int}()
+        i = loop_starts
+        while length(split(lines[i])) == 1
+            name_to_column[split(lines[i])[1]] = i + 1 - loop_starts
+            i += 1
         end
+        println(name_to_column)
 
         # now extract fractional coords of atoms and their charges
-        for i = loop_starts+length(next_lines):length(lines)
+        for i = loop_starts+length(name_to_column):length(lines)
             line = split(lines[i])
-            push!(atoms, line[1])
-            push!(xf, mod(parse(Float64, line[2]), 1.0))
-            push!(yf, mod(parse(Float64, line[3]), 1.0))
-            push!(zf, mod(parse(Float64, line[4]), 1.0))
-            push!(charges, parse(Float64, line[5]))
-            if length(line) != 5
+            push!(atoms, line[name_to_column["_atom_site_label"]])
+            push!(xf, mod(parse(Float64, line[name_to_column["_atom_site_fract_x"]]), 1.0))
+            push!(yf, mod(parse(Float64, line[name_to_column["_atom_site_fract_y"]]), 1.0))
+            push!(zf, mod(parse(Float64, line[name_to_column["_atom_site_fract_z"]]), 1.0))
+            push!(charges, parse(Float64, line[name_to_column["_atom_site_charge"]]))
+            if length(line) != length(name_to_column)
                 break
             end
         end
@@ -164,6 +170,12 @@ type Framework
     check_for_charge_neutrality::Function
     print_info::Function
     get_COM::Function
+    write_to_cssr::Function
+    write_to_cif::Function
+    replicate_framework_to_xyz::Function
+    write_unitcell_boundary_vtk::Function
+    append_number_labels_to_atoms::Function
+    remove_number_labels_on_atoms::Function
 
     # constructor
     function Framework(structurename::AbstractString, check_for_atom_overlap::Bool=true; file_extension::AbstractString="cssr")
@@ -398,7 +410,188 @@ type Framework
 
             return com
         end
+
+        framework.write_to_cssr = function(filename::AbstractString)
+            """
+            Write to .cssr with desired filename
+            """
+            if (filename == framework.structurename * ".cssr")
+                error("With this filename, we will overwrite the original structure...\n")
+            end
+            f = open("data/structures/" * filename, "w")
+            write(f, @sprintf("\t\t\t%f %f %f\n", framework.a, framework.b, framework.c))
+            write(f, @sprintf("\t\t%f %f %f SPGR = 1 P 1      OPT = 0\n", 
+                                framework.alpha * 180 / pi, 
+                                framework.beta * 180 / pi, 
+                                framework.gamma * 180 / pi)
+            )
+            write(f, @sprintf("%d 0\n", framework.natoms))
+            write(f, @sprintf("0 %s : %s\n", framework.structurename, "revised by PEGrid"))
+            for i = 1:framework.natoms
+                # only store if this shifted atom is in [0,1]^3
+                write(f, @sprintf(" %d %s %f %f %f  0  0  0  0  0  0  0  0  %f\n", i, framework.atoms[i], 
+                        framework.fractional_coords[1, i], framework.fractional_coords[2, i], framework.fractional_coords[3, i],
+                        framework.charges[i]))
+            end
+            @printf("Cssr can be found in /data/structures/%s\n", filename)
+            close(f)
+        end
+
+        framework.write_to_cif = function(filename::AbstractString)
+            """
+            Write framework to .cif format
+            """
+            if (filename == framework.structurename * ".cif")
+                error("With this filename, we will overwrite the original structure...\n")
+            end
+            f = open("data/structures/" * filename * ".cif", "w")
+            @printf(f, "_symmetry_space_group_name_H-M   'P 1'\n")
+
+            @printf(f, "_cell_length_a %f\n", framework.a)
+            @printf(f, "_cell_length_b %f\n", framework.b)
+            @printf(f, "_cell_length_c %f\n", framework.c)
+            
+            @printf(f, "_cell_angle_alpha %f\n", framework.alpha * 180.0 / pi)
+            @printf(f, "_cell_angle_beta %f\n", framework.beta * 180.0 / pi)
+            @printf(f, "_cell_angle_gamma %f\n", framework.gamma * 180.0 / pi)
+            @printf(f, "_cell_volume %f\n", framework.v_unitcell)
+
+            @printf(f, "_symmetry_Int_Tables_number 1\n\n")
+            @printf(f, "loop_\n_symmetry_equiv_pos_as_xyz\n 'x, y, z'\n\n")
+
+            @printf(f, "loop_\n_atom_site_label\n_atom_site_type_symbol\n")
+            @printf(f, "_atom_site_fract_x\n_atom_site_fract_y\n_atom_site_fract_z\n")
+            @printf(f, "_atom_site_charge\n")
+
+             for i = 1:framework.natoms
+                # elements may be e.g Ca21
+                element = framework.atoms[i]
+                if ! isalpha(element)
+                    if isalpha(element[1:2])
+                        element = element[1:2]
+                    else
+                        element = element[1]
+                    end
+                    @assert(isalpha(element))
+                end
+                @printf(f, "%s %s %f %f %f %f\n", framework.atoms[i], element,
+                            framework.fractional_coords[1, i],
+                            framework.fractional_coords[2, i],
+                            framework.fractional_coords[3, i],
+                            framework.charges[i])
+             end
+             close(f)
+             @printf("%s.cif file present in data/structures/\n", filename)
+        end
         
+        framework.write_unitcell_boundary_vtk = function()
+            """
+            Write unit cell boundary as a .vtk file for visualizing the unit cell.
+            """
+            if ! isdir(homedir() * "/PEGrid_output")
+               mkdir(homedir() * "/PEGrid_output") 
+            end
+            vtk_file = open(homedir() * "/PEGrid_output/" * framework.structurename * ".vtk", "w")
+            
+            # write first lines
+            @printf(vtk_file, "# vtk DataFile Version 2.0\nunit cell boundary\n
+                               ASCII\nDATASET POLYDATA\nPOINTS 8 double\n") 
+
+            # write points on boundary of unit cell
+            for i = 0:1
+                for j = 0:1
+                    for k = 0:1
+                        x = [i, j, k] # fractional coordinate
+                        cellpoint = framework.f_to_cartesian_mtrx * x
+                        @printf(vtk_file, "%.3f %.3f %.3f\n", cellpoint[1], cellpoint[2], cellpoint[3])
+                    end
+                end
+            end
+
+            # define connections
+            @printf(vtk_file, "LINES 12 36\n2 0 1\n2 0 2\n2 1 3\n2 2 3\n2 4 5\n
+                               2 4 6\n2 5 7\n2 6 7\n2 0 4\n2 1 5\n2 2 6\n2 3 7\n")
+            close(vtk_file)
+            @printf(".vtk available at: %s\n", homedir() * "/PEGrid_output/" * framework.structurename * ".vtk")
+        end
+
+        framework.replicate_framework_to_xyz = function(rep_factors::Array{Int}, alldirections::Bool)
+            """
+            Converts a Framework to an xyz file; replications of unit cell tunable.
+            Replicates unit cell into rep_factor by rep_factor by rep_factor supercell.
+            The home unit cell will be in the middle.
+
+            :param Array{Int} rep_factor: number of times to replicate unit cell
+            :param Bool alldirections: replicate in all directions if true. else, just 0 to positive reps
+            """
+            if ! isdir(homedir() * "/PEGrid_output")
+               mkdir(homedir() * "/PEGrid_output") 
+            end
+            xyz_file = open(homedir() * "/PEGrid_output/" * framework.structurename * ".xyz", "w")
+            if alldirections
+                n = framework.natoms * (2 * rep_factors[1] + 1) * (2 * rep_factors[2] + 1) * (2 * rep_factors[3] + 1)
+                lower_bound_reps = -rep_factors
+            else
+                n = framework.natoms * (rep_factors[1] + 1) * (rep_factors[2] + 1) * (rep_factors[3] + 1)
+                lower_bound_reps = [0, 0, 0]
+            end
+            @printf(xyz_file, "%d\n\n", n)
+            
+            for a = 1:framework.natoms
+                # print atoms in the core unit cell
+                xyz = framework.f_to_cartesian_mtrx * framework.fractional_coords[:, a]
+                @printf(xyz_file, "%s %f %f %f\n", framework.atoms[a], 
+                        xyz[1], xyz[2], xyz[3])
+            end
+
+            # print atoms in neighboring unit cells
+            for a = 1:framework.natoms
+                for rep_x = lower_bound_reps[1]:rep_factors[1]
+                    for rep_y = lower_bound_reps[2]:rep_factors[2]
+                        for rep_z = lower_bound_reps[3]:rep_factors[3]
+                            if (rep_x == 0) & (rep_y == 0) & (rep_z == 0)
+                                # already printed this above
+                                continue
+                            end
+                            # fractional coord
+                            x_f = framework.fractional_coords[:, a] + 1.0 * [rep_x, rep_y, rep_z]  
+                            xyz = framework.f_to_cartesian_mtrx * x_f
+                            @printf(xyz_file, "%s %f %f %f\n", framework.atoms[a], 
+                                    xyz[1], xyz[2], xyz[3])
+                        end
+                    end
+                end
+            end
+            close(xyz_file)
+            @printf("Replicated .xyz in %s\n", homedir() * "/PEGrid_output/" * framework.structurename * ".xyz")
+        end
+
+        framework.append_number_labels_to_atoms = function()
+            """
+            Appends numbers to each atom.
+            e.g. C->C1, C->C2
+            """
+            atoms = unique(f.atoms)
+            for atom in atoms
+                idx = find(f.atoms .== atom)
+                for i = 1:length(idx)
+                    f.atoms[idx[i]] = @sprintf("%s%d", atom, i)
+                end
+            end
+        end
+
+        framework.remove_number_labels_on_atoms = function()
+            """
+            Removes number labels from atoms
+            e.g. C1->C, C2->C
+            """
+            for i = 1:framework.natoms
+                while !isalpha(f.atoms[i][end])
+                    f.atoms[i] = chop(f.atoms[i])
+                end
+            end
+        end
+
         if check_for_atom_overlap
             framework.check_for_atom_overlap(0.1)
         end
@@ -407,28 +600,6 @@ type Framework
         return framework
     end  # end constructor
 end  # end Framework type
-
-function write_to_cssr(framework::Framework, filename::AbstractString)
-    """
-    Write framework object to .cssr with desired filename
-    """
-    if (filename == framework.structurename * ".cssr")
-        error("With this filename, we will overwrite the original structure...\n")
-    end
-    f = open("data/structures/" * filename, "w")
-    write(f, @sprintf("\t\t\t%f %f %f\n", framework.a, framework.b, framework.c))
-    write(f, @sprintf("\t\t%f %f %f SPGR = 1 P 1      OPT = 0\n", framework.alpha * 180 / pi, framework.beta * 180 / pi, framework.gamma * 180 / pi))
-    write(f, @sprintf("%d 0\n", framework.natoms))
-    write(f, @sprintf("0 %s : %s\n", framework.structurename, "revised by PEGrid"))
-    for i = 1:framework.natoms
-        # only store if this shifted atom is in [0,1]^3
-        write(f, @sprintf(" %d %s %f %f %f  0  0  0  0  0  0  0  0  %f\n", i, framework.atoms[i], 
-                framework.fractional_coords[1, i], framework.fractional_coords[2, i], framework.fractional_coords[3, i],
-                framework.charges[i]))
-    end
-    @printf("Cssr can be found in /data/structures/%s\n", filename)
-    close(f)
-end
 
 function shift_unit_cell(framework::Framework, xf_shift::Array{Float64})
     """
@@ -520,86 +691,3 @@ function consolidate_atoms_with_same_charge(framework::Framework; decimal_tol::I
     return new, charge_dict, element_dict
 end
     
-function write_unitcell_boundary_vtk(frameworkname::AbstractString)
-    """
-    Write unit cell boundary as a .vtk file for visualizing the unit cell.
-    """
-    framework = Framework(frameworkname)
-    if ! isdir(homedir() * "/PEGrid_output")
-       mkdir(homedir() * "/PEGrid_output") 
-    end
-    vtk_file = open(homedir() * "/PEGrid_output/" * framework.structurename * ".vtk", "w")
-    
-    # write first lines
-    @printf(vtk_file, "# vtk DataFile Version 2.0\nunit cell boundary\n
-                       ASCII\nDATASET POLYDATA\nPOINTS 8 double\n") 
-
-    # write points on boundary of unit cell
-    for i = 0:1
-        for j = 0:1
-            for k = 0:1
-                x = [i, j, k] # fractional coordinate
-                cellpoint = framework.f_to_cartesian_mtrx * x
-                @printf(vtk_file, "%.3f %.3f %.3f\n", cellpoint[1], cellpoint[2], cellpoint[3])
-            end
-        end
-    end
-
-    # define connections
-    @printf(vtk_file, "LINES 12 36\n2 0 1\n2 0 2\n2 1 3\n2 2 3\n2 4 5\n
-                       2 4 6\n2 5 7\n2 6 7\n2 0 4\n2 1 5\n2 2 6\n2 3 7\n")
-    close(vtk_file)
-    @printf(".vtk available at: %s\n", homedir() * "/PEGrid_output/" * framework.structurename * ".vtk")
-end
-
-function replicate_framework_to_xyz(framework::Framework; rep_factors::Array{Int} = [1, 1, 1], alldirections::Bool=true)
-    """
-    Converts a Framework to an xyz file; replications of unit cell tunable.
-    Replicates unit cell into rep_factor by rep_factor by rep_factor supercell.
-    The home unit cell will be in the middle.
-
-    :param Framework framework: Framework object from PEGrid
-    :param Array{Int} rep_factor: number of times to replicate unit cell
-    :param Bool alldirections: replicate in all directions if true. else, just 0 to positive reps
-    """
-    if ! isdir(homedir() * "/PEGrid_output")
-       mkdir(homedir() * "/PEGrid_output") 
-    end
-    xyz_file = open(homedir() * "/PEGrid_output/" * framework.structurename * ".xyz", "w")
-    if alldirections
-        n = framework.natoms * (2 * rep_factors[1] + 1) * (2 * rep_factors[2] + 1) * (2 * rep_factors[3] + 1)
-        lower_bound_reps = -rep_factors
-    else
-        n = framework.natoms * (rep_factors[1] + 1) * (rep_factors[2] + 1) * (rep_factors[3] + 1)
-        lower_bound_reps = [0, 0, 0]
-    end
-    @printf(xyz_file, "%d\n\n", n)
-    
-    for a = 1:framework.natoms
-        # print atoms in the core unit cell
-        xyz = framework.f_to_cartesian_mtrx * framework.fractional_coords[:, a]
-        @printf(xyz_file, "%s %f %f %f\n", framework.atoms[a], 
-                xyz[1], xyz[2], xyz[3])
-    end
-
-    # print atoms in neighboring unit cells
-    for a = 1:framework.natoms
-        for rep_x = lower_bound_reps[1]:rep_factors[1]
-            for rep_y = lower_bound_reps[2]:rep_factors[2]
-                for rep_z = lower_bound_reps[3]:rep_factors[3]
-                    if (rep_x == 0) & (rep_y == 0) & (rep_z == 0)
-                        # already printed this above
-                        continue
-                    end
-                    # fractional coord
-                    x_f = framework.fractional_coords[:, a] + 1.0 * [rep_x, rep_y, rep_z]  
-                    xyz = framework.f_to_cartesian_mtrx * x_f
-                    @printf(xyz_file, "%s %f %f %f\n", framework.atoms[a], 
-                            xyz[1], xyz[2], xyz[3])
-                end
-            end
-        end
-    end
-    close(xyz_file)
-    @printf("Replicated .xyz in %s\n", homedir() * "/PEGrid_output/" * framework.structurename * ".xyz")
-end;

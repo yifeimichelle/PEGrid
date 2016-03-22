@@ -29,5 +29,6 @@ function getEwaldparams(framework::Framework, sr_cutoff::Float64, precision::Flo
         @printf("alpha convergence parameter = %f, k_reps = [%d, %d, %d] for Ewald precision %f and sr_cutoff = %f A\n", 
                 alpha, k_reps[1], k_reps[2], k_reps[3], precision, sr_cutoff)
     end
-    return alpha, k_reps
+    return Dict("alpha" => alpha, 
+                "k_reps" => k_reps)
 end
