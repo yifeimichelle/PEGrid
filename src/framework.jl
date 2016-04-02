@@ -38,7 +38,14 @@ function read_crystal_file(structurename::AbstractString, file_extension::Abstra
                 continue
             end
             if line[1] == "_symmetry_space_group_name_H-M"
-                @assert(contains(line[2] * line[3], "P1"), ".cif must have P1 symmetry.\n")
+                if length(line) == 3
+                    @assert(contains(line[2] * line[3], "P1"), ".cif must have P1 symmetry.\n")
+                elseif length(line) == 2
+                    @assert(contains(line[2], "P1"), ".cif must have P1 symmetry\n")
+                else
+                    println(line)
+                    error("Does this .cif have P1 symmetry?")
+                end
             end
             
             for axis in ["a", "b", "c"]
@@ -54,33 +61,38 @@ function read_crystal_file(structurename::AbstractString, file_extension::Abstra
 
             if (line[1] == "loop_")
                 next_line = split(lines[i+1])
-                if (next_line[1] == "_atom_site_label")
+                if contains(next_line[1], "_atom_site")
                     loop_starts = i + 1
                     break
                 end
             end
         end  # end loop over lines
 
+        if loop_starts == -1
+            error("Could not find _atom_site* after loop_ if .cif file\n")
+        end
+
         # broke the loop. so loop_starts is line where "_loop" first starts
+        # name_to_column is a dictionary that e.g. returns which column contains x fractional coord
+        #   use example: name_to_column["_atom_site_fract_x"] gives 3
         name_to_column = Dict{AbstractString, Int}()
         i = loop_starts
         while length(split(lines[i])) == 1
             name_to_column[split(lines[i])[1]] = i + 1 - loop_starts
             i += 1
         end
-        println(name_to_column)
 
         # now extract fractional coords of atoms and their charges
         for i = loop_starts+length(name_to_column):length(lines)
             line = split(lines[i])
+            if length(line) != length(name_to_column)
+                break
+            end
             push!(atoms, line[name_to_column["_atom_site_label"]])
             push!(xf, mod(parse(Float64, line[name_to_column["_atom_site_fract_x"]]), 1.0))
             push!(yf, mod(parse(Float64, line[name_to_column["_atom_site_fract_y"]]), 1.0))
             push!(zf, mod(parse(Float64, line[name_to_column["_atom_site_fract_z"]]), 1.0))
             push!(charges, parse(Float64, line[name_to_column["_atom_site_charge"]]))
-            if length(line) != length(name_to_column)
-                break
-            end
         end
         data["natoms"] = length(xf)
     end  # if file is .cif
@@ -571,11 +583,11 @@ type Framework
             Appends numbers to each atom.
             e.g. C->C1, C->C2
             """
-            atoms = unique(f.atoms)
+            atoms = unique(framework.atoms)
             for atom in atoms
-                idx = find(f.atoms .== atom)
+                idx = find(framework.atoms .== atom)
                 for i = 1:length(idx)
-                    f.atoms[idx[i]] = @sprintf("%s%d", atom, i)
+                    framework.atoms[idx[i]] = @sprintf("%s%d", atom, i)
                 end
             end
         end
@@ -586,8 +598,8 @@ type Framework
             e.g. C1->C, C2->C
             """
             for i = 1:framework.natoms
-                while !isalpha(f.atoms[i][end])
-                    f.atoms[i] = chop(f.atoms[i])
+                while !isalpha(framework.atoms[i][end])
+                    framework.atoms[i] = chop(framework.atoms[i])
                 end
             end
         end
@@ -690,4 +702,3 @@ function consolidate_atoms_with_same_charge(framework::Framework; decimal_tol::I
 
     return new, charge_dict, element_dict
 end
-    
