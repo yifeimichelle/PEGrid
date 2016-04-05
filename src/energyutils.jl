@@ -6,6 +6,7 @@ include("forcefield.jl")
 include("adsorbates.jl")
 include("getEwaldparams.jl")
 using Optim
+using ParallelAccelerator
     
 # Vacuum permittivity eps0 = 8.854187817e-12 # C^2/(J-m)
 # 1 m = 1e10 A, 1 e = 1.602176e-19 C, kb = 1.3806488e-23 J/K
@@ -13,12 +14,12 @@ using Optim
 const epsilon_0 = 4.7622424954949676e-7;  # \epsilon_0 vacuum permittivity units: electron charge^2 /(A - K)
 
 function _electrostatic_potential(xyz_coord::Array{Float64},
-                         framework::Framework,
-                         rep_factors::Array{Int},
-                         sr_cutoff::Float64,
-                         alpha::Float64,
-                         k_reps::Array{Int};
-                         verboseflag::Bool=false)
+                                 framework::Framework,
+                                 rep_factors::Array{Int, 1},
+                                 sr_cutoff::Float64,
+                                 alpha::Float64,
+                                 k_reps::Array{Int};
+                                 verboseflag::Bool=false)
     """
     Compute electrostatic energy at a point inside a Framework using EWald summations.
     
@@ -30,9 +31,8 @@ function _electrostatic_potential(xyz_coord::Array{Float64},
         alpha: decay parameter for long-range calcs
         k_reps: number of replications in k-space for long-range calcs
     """
-    @assert(size(xyz_coord) == (3,))
     # get fractional coord of bead
-    fractional_coord = framework.cartesian_to_f_mtrx * xyz_coord
+    fractional_coord::Array{Float64, 1} = framework.cartesian_to_f_mtrx * xyz_coord
     
     # reflect bead to [0,1] via periodic boundary conditions
     fractional_coord[1] = mod(fractional_coord[1], 1.0)
@@ -42,21 +42,22 @@ function _electrostatic_potential(xyz_coord::Array{Float64},
     ######
     ######  Short-range
     ######
-    E_sr = 0.0  # short range energy
+    const sqrt_alpha = sqrt(alpha) # compute sqrt(\alpha) here to save time
+    E_sr::Float64 = 0.0  # short range energy
     # loop over adjacent unit cells to implement periodic boundary conditions
     for rep_x = -rep_factors[1]:rep_factors[1]
         for rep_y = -rep_factors[2]:rep_factors[2]
             for rep_z = -rep_factors[3]:rep_factors[3]
                 # get vector between this point and framework atoms in fractional space
-                dx = broadcast(-, fractional_coord + 1.0 * [rep_x, rep_y, rep_z], framework.fractional_coords)
+                @inbounds dx::Array{Float64} = broadcast(-, fractional_coord + 1.0 * [rep_x, rep_y, rep_z], framework.fractional_coords)
 
                 # transfer to Cartesian coords
                 dx = framework.f_to_cartesian_mtrx * dx
 
                 @simd for i = 1:framework.natoms
-                    @inbounds r = norm(dx[:, i])
+                    @inbounds r::Float64 = norm(dx[:, i])
                     if r < sr_cutoff
-                        @inbounds E_sr += framework.charges[i] / r * erfc(r * sqrt(alpha))
+                        @inbounds E_sr += framework.charges[i] / r * erfc(r * sqrt_alpha)
                     end
                 end
             end  # end replication in x-direction
@@ -68,8 +69,8 @@ function _electrostatic_potential(xyz_coord::Array{Float64},
     ######  Long-range
     ######
     # Cartesian vector from point to framework atoms (in matrix)
-    x_framework_to_pt = broadcast(-, xyz_coord, framework.f_to_cartesian_mtrx * framework.fractional_coords)
-    E_lr = 0.0
+    @inbounds x_framework_to_pt::Array{Float64} = broadcast(-, xyz_coord, framework.f_to_cartesian_mtrx * framework.fractional_coords)
+    E_lr::Float64 = 0.0
     for kx = -k_reps[1]:k_reps[1]
         for ky = -k_reps[2]:k_reps[2]
             for kz = -k_reps[3]:k_reps[3]
@@ -79,17 +80,23 @@ function _electrostatic_potential(xyz_coord::Array{Float64},
                 end
                 
                 # get the k-vector
-                k = framework.reciprocal_lattice * [kx, ky, kz]
-                magnitude_k_2 = dot(k, k)  # its magnitude, squared
+                k::Array{Float64, 1} = framework.reciprocal_lattice * [kx, ky, kz]
+                magnitude_k_2::Float64 = dot(k, k)  # its magnitude, squared
                 
                 # dot product of k-vector and dx
-                k_dot_dx = transpose(k) * x_framework_to_pt
-                
-                E_lr_this_k = 0.0
+                @inbounds k_dot_dx::Array{Float64} = transpose(k) * x_framework_to_pt
 
-                @simd for i = 1:framework.natoms
-                    @inbounds @fastmath E_lr_this_k += framework.charges[i] * cos(k_dot_dx[i])
-                end
+                # try using ParallelAccelerator
+                @acc k_dot_dx = cos(k_dot_dx)
+                @acc k_dot_dx = framework.charges .* k_dot_dx
+                @acc E_lr_this_k::Float64 = sum(k_dot_dx)
+
+ #                 E_lr_this_k = 0.0
+ #                 
+ #                 @simd for i = 1:framework.natoms
+ #                     @inbounds E_lr_this_k += framework.charges[i] * cos(k_dot_dx[i])
+ #                 end
+
                 E_lr_this_k = E_lr_this_k / magnitude_k_2 * exp(- magnitude_k_2 / (4.0 * alpha))
                 E_lr += E_lr_this_k
             end
@@ -109,8 +116,8 @@ function _vdW_energy_of_bead(xyz_coord::Array{Float64},
                              epsilons::Array{Float64},
                              sigmas2::Array{Float64},
                              framework::Framework,
-                             rep_factors::Array{Int},
-                             cutoff::Float64)
+                             rep_factors::Array{Int, 1},
+                             cutoff2::Float64)
     """
     Compute Van der Waals interaction energy via the LJ potential of a bead at xyz_coord (Cartesian!)
    
@@ -120,36 +127,33 @@ function _vdW_energy_of_bead(xyz_coord::Array{Float64},
         sigmas2: Lennard-Jones sigma parameters (squared!) for bead with corresponding framework atoms. shape: (framework.natoms,)
         framework: the structure (PEGrid object)
         rep_factors: x,y,z replication factors of primitive unit cell for PBCs
-        cutoff: Lennard-Jones cutoff distance
+        cutoff2: Lennard-Jones cutoff distance, squared
     """
-    @assert(size(xyz_coord) == (3,))
     # get fractional coord of bead
-    fractional_coord = framework.cartesian_to_f_mtrx * xyz_coord
+    fractional_coord::Array{Float64,1} = framework.cartesian_to_f_mtrx * xyz_coord
 
     # reflect bead to [0,1] via periodic boundary conditions
     fractional_coord[1] = mod(fractional_coord[1], 1.0)
     fractional_coord[2] = mod(fractional_coord[2], 1.0)
     fractional_coord[3] = mod(fractional_coord[3], 1.0)
 
-    energy = 0.0  # initialize energy of this bead as 0 to subsequently add pairwise contributions
+    energy::Float64 = 0.0  # initialize energy of this bead as 0 to subsequently add pairwise contributions
     # loop over adjacent unit cells to implement periodic boundary conditions
     for rep_x = -rep_factors[1]:rep_factors[1]
         for rep_y = -rep_factors[2]:rep_factors[2]
             for rep_z = -rep_factors[3]:rep_factors[3]
-                # what follows is vectorized over the framework atoms in the home box
-
                 # get vectors between this point and the framework atom (perhaps shifted to ghost unit cell)
-                dx = broadcast(-, framework.fractional_coords, fractional_coord + 1.0 * [rep_x, rep_y, rep_z])
+                dx::Array{Float64} = broadcast(-, framework.fractional_coords, fractional_coord - 1.0 * [rep_x, rep_y, rep_z])
                 
                 # convert to Cartesian coords
                 dx = framework.f_to_cartesian_mtrx * dx
                 
                 # this is the distance, squared
-                r2 = vec(sum(dx .* dx, 1))
-               
+                r2::Array{Float64, 1} = vec(sum(dx .* dx, 1))
+
                 @simd for i = 1:framework.natoms
-                    if r2[i] < cutoff * cutoff
-                        @inbounds sig_ovr_r6 = sigmas2[i] / r2[i]
+                    if r2[i] < cutoff2
+                        @inbounds sig_ovr_r6::Float64 = sigmas2[i] / r2[i]
                         sig_ovr_r6 = sig_ovr_r6 * sig_ovr_r6 * sig_ovr_r6
                         @inbounds energy += 4.0 * epsilons[i] * sig_ovr_r6 * (sig_ovr_r6 - 1.0)
                     end
@@ -165,7 +169,7 @@ function _vdW_energy_of_adsorbate(adsorbate::Adsorbate,
             epsilons::Array{Float64}, 
             sigmas2::Array{Float64},
             framework::Framework,
-            rep_factors::Array{Int}, 
+            rep_factors::Array{Int, 1}, 
             cutoff::Float64)
     """
     Compute Van der Waals interaction energy via pairwise Lennard Jones potentials.
@@ -179,7 +183,7 @@ function _vdW_energy_of_adsorbate(adsorbate::Adsorbate,
     """
     energy = 0.0
     for b = 1:adsorbate.nbeads  # for each bead in adsorbate
-        energy += _vdW_energy_of_bead(adsorbate.bead_xyz[:, b], epsilons[:, b], sigmas2[:, b], framework, rep_factors, cutoff)
+        energy += _vdW_energy_of_bead(adsorbate.bead_xyz[:, b], epsilons[:, b], sigmas2[:, b], framework, rep_factors, cutoff*cutoff)
     end  # end loop over beads in adsorbate
 
     return energy  # in Kelvin
@@ -305,15 +309,11 @@ function electrostatic_energy_of_adsorbate(adsorbate::Adsorbate, framework::Fram
     # get unit cell replication factors for periodic BCs
     if rep_factors == [-1, -1, -1]
         rep_factors = get_replication_factors(framework, sr_cutoff)
- #         @printf("rep_factors = [%d, %d, %d]\n", rep_factors[1], rep_factors[2], rep_factors[3])
     end
     if ! (haskey(ewald_params, "alpha") & haskey(ewald_params, "k_reps"))
-        ewald_params = getEwaldparams(framework, sr_cutoff, 1e-6)
- #         @printf("alpha = %f, k_reps = [%d, %d, %d]\n", ewald_params["alpha"],
- #                     ewald_params["k_reps"][1],
- #                     ewald_params["k_reps"][2],
- #                     ewald_params["k_reps"][3])
+        ewald_params = getEwaldparams(framework, sr_cutoff, 1e-6, verboseflag=true)
     end
+
     energy = 0.0
     for i = 1:adsorbate.nbeads
         if adsorbate.bead_charges[i] == 0.0
