@@ -24,9 +24,9 @@ function read_crystal_file(structurename::AbstractString, file_extension::Abstra
     charges = Float64[]
     
     # open crystal structure file and read its lines
-    f = open("data/structures/" * structurename * "." * file_extension)
-    if ~ isfile("data/structures/" * structurename * "." * file_extension)
-        @printf("Crystal structure file %s not present in data/structures/", structurename * "." * file_extension)
+    f = open(PEGRID_DATA_DIR * "/structures/" * structurename * "." * file_extension)
+    if ~ isfile(PEGRID_DATA_DIR * "/structures/" * structurename * "." * file_extension)
+        @printf("Crystal structure file %s not present in %s/structures/", structurename * "." * file_extension, PEGRID_DATA_DIR)
     end
     lines = readlines(f)
 
@@ -165,7 +165,7 @@ type Framework
     fractional_coords::Array{Float64}
 
     # charges on atoms (units: electron charge)
-    charges::Array{Float64}
+    charges::Array{Float64, 1}
 
     # transformation matrix from fractional to cartesian
     f_to_cartesian_mtrx::Array{Float64}
@@ -184,7 +184,7 @@ type Framework
     get_COM::Function
     write_to_cssr::Function
     write_to_cif::Function
-    replicate_framework_to_xyz::Function
+    replicate_to_xyz::Function
     write_unitcell_boundary_vtk::Function
     append_number_labels_to_atoms::Function
     remove_number_labels_on_atoms::Function
@@ -262,10 +262,10 @@ type Framework
             Get mass of unit cell (amu)
             """
             # get atomic mass dictionary
-            if ! isfile("data/atomicmasses.csv")
-                print("Atomic masses file data/atomicmasses.csv not present")
+            if ! isfile(PEGRID_DATA_DIR * "/atomicmasses.csv")
+                print("Atomic masses file atomicmasses.csv not present in %s\n", PEGRID_DATA_DIR)
             end
-            df = readtable("data/atomicmasses.csv")
+            df = readtable(PEGRID_DATA_DIR * "/atomicmasses.csv")
             mass_dict = Dict()
             for i = 1:size(df, 1)
                 mass_dict[df[:atom][i]] = df[:mass][i] 
@@ -275,8 +275,8 @@ type Framework
             mass = 0.0 # count mass of all atoms here
             for a = 1:framework.natoms
                 if ~ (haskey(mass_dict, framework.atoms[a]))
-                    error(@sprintf("Framework atom %s not present in data/atomicmasses.cv file", 
-                                framework.atoms[a]))
+                    error(@sprintf("Framework atom %s not present in %s/atomicmasses.cv file", 
+                                framework.atoms[a], PEGRID_DATA_DIR))
                 end
                 mass += mass_dict[framework.atoms[a]]
             end
@@ -370,19 +370,27 @@ type Framework
             if (net_charge < -abs(tol)) | (net_charge > abs(tol))
                 @printf("Warning: Framework is not charge neutral!\n")
                 @printf("Net charge is %f.\n", net_charge)
+                return false
             end
+            return true
         end
 
         framework.print_info = function()
             @printf("Framework: %s\n", framework.structurename)
+            @printf("alpha = %f, beta = %f, gamma = %f\n", framework.alpha / pi * 180.0, framework.beta / pi * 180.0, framework.gamma / pi * 180.0)
+            @printf("a = %f, b = %f, c = %f\n", framework.a, framework.b, framework.c)
+            @printf("Crystal density: %f kg/m3\n", framework.crystaldensity())
+            @printf("Total charge: %f\n", sum(framework.charges))
             @printf("\t%d atoms.\n", framework.natoms)
+            for a in unique(framework.atoms)
+                @printf("%d %s.\n", sum(framework.atoms .== a), a)
+            end
             for i = 1:framework.natoms
-                @printf("%d. %s, xf = (%f, %f, %f), charge = %f\n", i, framework.atoms[i], 
+                @printf("%d. %s x_f = (%f, %f, %f), charge = %f\n", i, framework.atoms[i], 
                         framework.fractional_coords[1, i], framework.fractional_coords[2, i], framework.fractional_coords[3, i],
                         framework.charges[i])
             end
-            @printf("Crystal density: %f kg/m3\n", framework.crystaldensity())
-            @printf("Total charge: %f\n", sum(framework.charges))
+            return
         end
 
         framework.get_COM = function()
@@ -391,10 +399,10 @@ type Framework
             """
             com = [0.0, 0.0, 0.0]
             # create mass dictionary
-            if ! isfile("data/atomicmasses.csv")
-                print("Atomic masses file data/atomicmasses.csv not present")
+            if ! isfile(PEGRID_DATA_DIR * "/atomicmasses.csv")
+                print("Atomic masses file atomicmasses.csv not present in %s\n", PEGRID_DATA_DIR)
             end
-            df = readtable("data/atomicmasses.csv")
+            df = readtable(PEGRID_DATA_DIR * "/atomicmasses.csv")
             mass_dict = Dict()
             for i = 1:size(df, 1)
                 mass_dict[df[:atom][i]] = df[:mass][i] 
@@ -430,7 +438,7 @@ type Framework
             if (filename == framework.structurename * ".cssr")
                 error("With this filename, we will overwrite the original structure...\n")
             end
-            f = open("data/structures/" * filename, "w")
+            f = open(PEGRID_DATA_DIR * "/structures/" * filename, "w")
             write(f, @sprintf("\t\t\t%f %f %f\n", framework.a, framework.b, framework.c))
             write(f, @sprintf("\t\t%f %f %f SPGR = 1 P 1      OPT = 0\n", 
                                 framework.alpha * 180 / pi, 
@@ -445,7 +453,7 @@ type Framework
                         framework.fractional_coords[1, i], framework.fractional_coords[2, i], framework.fractional_coords[3, i],
                         framework.charges[i]))
             end
-            @printf("Cssr can be found in /data/structures/%s\n", filename)
+            @printf("Look at %s/structures/%s\n", PEGRID_DATA_DIR, filename)
             close(f)
         end
 
@@ -456,7 +464,7 @@ type Framework
             if (filename == framework.structurename * ".cif")
                 error("With this filename, we will overwrite the original structure...\n")
             end
-            f = open("data/structures/" * filename * ".cif", "w")
+            f = open(PEGRID_DATA_DIR * "/structures/" * filename * ".cif", "w")
             @printf(f, "_symmetry_space_group_name_H-M   'P 1'\n")
 
             @printf(f, "_cell_length_a %f\n", framework.a)
@@ -493,7 +501,7 @@ type Framework
                             framework.charges[i])
              end
              close(f)
-             @printf("%s.cif file present in data/structures/\n", filename)
+             @printf("%s.cif file present in %s/structures/\n", PEGRID_DATA_DIR, filename)
         end
         
         framework.write_unitcell_boundary_vtk = function()
@@ -527,7 +535,7 @@ type Framework
             @printf(".vtk available at: %s\n", homedir() * "/PEGrid_output/" * framework.structurename * ".vtk")
         end
 
-        framework.replicate_framework_to_xyz = function(rep_factors::Array{Int}, alldirections::Bool)
+        framework.replicate_to_xyz = function(rep_factors::Array{Int}, alldirections::Bool)
             """
             Converts a Framework to an xyz file; replications of unit cell tunable.
             Replicates unit cell into rep_factor by rep_factor by rep_factor supercell.

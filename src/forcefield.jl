@@ -31,6 +31,7 @@ type Forcefield
     mixingrules::AbstractString
     
     print_info::Function
+    print_these_atoms::Function
     
     # constructor
     function Forcefield(name::AbstractString, 
@@ -47,10 +48,10 @@ type Forcefield
         forcefield.mixingrules = mixingrules
 
         # read in pure X-X iteractions data
-        if ~ isfile("data/forcefields/" * name * ".csv")
-            @printf("Could not find file data/forcefields/%s.csv", name)
+        if ~ isfile(PEGRID_DATA_DIR * "/forcefields/" * name * ".csv")
+            @printf("Could not find file %s/forcefields/%s.csv", PEGRID_DATA_DIR, name)
         end
-        df = readtable("data/forcefields/" * name * ".csv", allowcomments=true)
+        df = readtable(PEGRID_DATA_DIR * "/forcefields/" * name * ".csv", allowcomments=true)
 
         # get bead epsilon and sigma
         if ~ (bead in df[:atom])
@@ -84,6 +85,18 @@ type Forcefield
             @printf("\tLJ cutoff radius: %f\n", forcefield.cutoff)
 
             for atom_type in keys(forcefield.epsilon)
+                @printf("%-4s - %-4s. epsilon = %f K, sigma = %f A\n",
+                    forcefield.bead, atom_type,
+                    forcefield.epsilon[atom_type], forcefield.sigma[atom_type])
+            end
+        end
+
+        forcefield.print_these_atoms = function(atoms::Array{AbstractString})
+            @printf("%s Force Field for %s adsorbate bead.\n", forcefield.name, forcefield.bead)
+            @printf("\tMixing rules: %s\n", forcefield.mixingrules)
+            @printf("\tLJ cutoff radius: %f\n", forcefield.cutoff)
+
+            for atom_type in atoms
                 @printf("%-4s - %-4s. epsilon = %f K, sigma = %f A\n",
                     forcefield.bead, atom_type,
                     forcefield.epsilon[atom_type], forcefield.sigma[atom_type])
