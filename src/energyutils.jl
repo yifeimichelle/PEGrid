@@ -52,9 +52,9 @@ function _electrostatic_potential(xyz_coord::Array{Float64},
                 @inbounds dx::Array{Float64} = broadcast(-, fractional_coord + 1.0 * [rep_x, rep_y, rep_z], framework.fractional_coords)
 
                 # transfer to Cartesian coords
-                dx = framework.f_to_cartesian_mtrx * dx
+                @inbounds dx = framework.f_to_cartesian_mtrx * dx
 
-                @simd for i = 1:framework.natoms
+                @inbounds for i = 1:framework.natoms
                     @inbounds r::Float64 = norm(dx[:, i])
                     if r < sr_cutoff
                         @inbounds E_sr += framework.charges[i] / r * erfc(r * sqrt_alpha)
@@ -71,7 +71,9 @@ function _electrostatic_potential(xyz_coord::Array{Float64},
     # Cartesian vector from point to framework atoms (in matrix)
     @inbounds x_framework_to_pt::Array{Float64} = broadcast(-, xyz_coord, framework.f_to_cartesian_mtrx * framework.fractional_coords)
     E_lr::Float64 = 0.0
-    for kx = -k_reps[1]:k_reps[1]
+    # use symmetry: cos(x) = cos(-x). So go from 0:k_reps in x-direction, multiply by two except for kx == 0.
+    # see here http://physics.stackexchange.com/questions/205794/symmetry-in-program-for-ewald-summation
+    for kx = 0:k_reps[1]
         for ky = -k_reps[2]:k_reps[2]
             for kz = -k_reps[3]:k_reps[3]
                 if (kx == 0) & (ky == 0) & (kz == 0)
@@ -85,19 +87,19 @@ function _electrostatic_potential(xyz_coord::Array{Float64},
                 
                 # dot product of k-vector and dx
                 @inbounds k_dot_dx::Array{Float64} = transpose(k) * x_framework_to_pt
-
-                # try using ParallelAccelerator
-                @acc k_dot_dx = cos(k_dot_dx)
-                @acc k_dot_dx = framework.charges .* k_dot_dx
-                @acc E_lr_this_k::Float64 = sum(k_dot_dx)
-
- #                 E_lr_this_k = 0.0
- #                 
- #                 @simd for i = 1:framework.natoms
- #                     @inbounds E_lr_this_k += framework.charges[i] * cos(k_dot_dx[i])
- #                 end
-
-                E_lr_this_k = E_lr_this_k / magnitude_k_2 * exp(- magnitude_k_2 / (4.0 * alpha))
+                
+                E_lr_this_k::Float64 = 0.0
+                
+                @simd for i = 1:framework.natoms
+                    @inbounds E_lr_this_k += framework.charges[i] * cos(k_dot_dx[i])
+                end
+                
+                # two is for symmetry!
+                if (kx == 0)
+                    E_lr_this_k = E_lr_this_k / magnitude_k_2 * exp(- magnitude_k_2 / (4.0 * alpha))
+                else
+                    E_lr_this_k = 2.0 * E_lr_this_k / magnitude_k_2 * exp(- magnitude_k_2 / (4.0 * alpha))
+                end
                 E_lr += E_lr_this_k
             end
         end
@@ -183,7 +185,7 @@ function _vdW_energy_of_adsorbate(adsorbate::Adsorbate,
     """
     energy = 0.0
     for b = 1:adsorbate.nbeads  # for each bead in adsorbate
-        energy += _vdW_energy_of_bead(adsorbate.bead_xyz[:, b], epsilons[:, b], sigmas2[:, b], framework, rep_factors, cutoff*cutoff)
+        energy += _vdW_energy_of_bead(adsorbate.x[:, b], epsilons[:, b], sigmas2[:, b], framework, rep_factors, cutoff*cutoff)
     end  # end loop over beads in adsorbate
 
     return energy  # in Kelvin
@@ -316,127 +318,38 @@ function electrostatic_energy_of_adsorbate(adsorbate::Adsorbate, framework::Fram
 
     energy = 0.0
     for i = 1:adsorbate.nbeads
-        if adsorbate.bead_charges[i] == 0.0
+        if adsorbate.charges[i] == 0.0
             continue
         end
-        potential_in_framework = _electrostatic_potential(adsorbate.bead_xyz[:, i],
+        potential_in_framework = _electrostatic_potential(adsorbate.x[:, i],
                                          framework, rep_factors, sr_cutoff,
                                          ewald_params["alpha"], ewald_params["k_reps"])
-        energy += adsorbate.bead_charges[i] * potential_in_framework
+        energy += adsorbate.charges[i] * potential_in_framework
    end
    return energy
-end
-
-
-function vdW_energy_of_adsorbate(adsorbatename::AbstractString,
-                        fractional_translations::Array{Float64},
-                        structurename::AbstractString,
-                        forcefieldname::AbstractString;
-                        cutoff::Float64=12.5,
-                        num_rotation_samples::Int=500,
-                        temperature::Float64=-1.0,
-                        verbose_flag::Bool=false)
-    """
-    Compute energy of adsorbate
-
-    :returns Array{Float64} of potential energies at each point in Kelvin (well, same units as \epsilon given in forcefield)
-    """
-    if (verbose_flag)
-        @printf("Constructing adsorbate %s...\n", adsorbatename)
-    end
-    adsorbate = Adsorbate(adsorbatename)
-    if (adsorbate.nbeads > 1) & (temperature == -1.0)
-        error("Need to input temperature (in K) for adsorbate with >1 beads for Boltmann weighting of orientations (rotations)")
-    end
-
-    if (verbose_flag)
-        @printf("Constructing framework object for %s...\n", structurename)
-    end
-    framework = Framework(structurename)
-
-    if (verbose_flag)
-        @printf("Constructing forcefield(s) for bead(s) in %s...\n", forcefieldname)
-    end
-    forcefields = Forcefield[]  # list of forcefields
-    for b = 1:adsorbate.nbeads
-        if (verbose_flag)
-            @printf("\tBead %s...\n", adsorbate.bead_names[b])
-        end
-        push!(forcefields, Forcefield(forcefieldname, adsorbate.bead_names[b], cutoff=cutoff))
-    end
-    
-    # get unit cell replication factors for periodic BCs
-    rep_factors = get_replication_factors(framework, cutoff)
-    if (verbose_flag)
-        @printf("\tUnit cell replication factors for cutoff radius %f A: %d x %d x %d\n", cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
-    end
-    
-    # get position array and epsilons/sigmas for easy computation
-    epsilons, sigmas2 = _generate_epsilons_sigmas2(framework, forcefields)
-
-    if (size(fractional_translations)[1] != 3)
-        error("fractional_translations mtrx shld be 3 by npoints")
-    end
-    npoints = (length(fractional_translations) != 3) ? size(fractional_translations)[2] : 1
-
-    if (verbose_flag)
-        @printf("\tComputing potential energy at %d points\n", npoints)
-    end
-
-    E = zeros(npoints)  # pre-allocate array of energies
-
-    for i = 1:npoints
-        # translate adsorbate by vector in cartesian space:
-        adsorbate.translate_to(framework.f_to_cartesian_mtrx * fractional_translations[:, i])
-
-        # compute energy
-        if adsorbate.nbeads == 1  # no need for sampling rotations
-            E[i] = _vdW_energy_of_adsorbate!(adsorbate,
-                                        epsilons,
-                                        sigmas2,
-                                        framework,
-                                        rep_factors, 
-                                        cutoff)
-        else  # need to sample rotations and get boltzmann-weighted average
-            boltzmann_weight_sum = 0.0
-            weighted_energy_sum = 0.0
-            for k = 1:num_rotation_samples
-                adsorbate.perform_uniform_random_rotation()
-                _energy = _vdW_energy_of_adsorbate!(adsorbate,
-                                            epsilons,
-                                            sigmas2,
-                                            framework,
-                                            rep_factors, 
-                                            cutoff)
-                boltzmann_weight = exp(-_energy / temperature)
-                boltzmann_weight_sum += boltzmann_weight
-                weighted_energy_sum += boltzmann_weight * _energy
-            end
-            E[i] = weighted_energy_sum / boltzmann_weight_sum
-        end
-    end
-    
-    return E  # in (Kelvin)
 end
 
 function find_min_energy_position(framework::Framework,
                                   forcefieldname::AbstractString, 
                                   adsorbatename::AbstractString,
                                   x_f_start::Array{Float64};
-                                  num_rotation_samples::Int=200,
-                                  temperature::Float64=-1.0,
                                   cutoff::Float64=12.5,
                                   verboseflag::Bool=false)
     """
     Find minimum energy position of adsorbate in framework
+
+    Parameters:
+        framework: PEGrid Framework object that contains crystal structure info
+        forcefieldname: name of force field to use for vdW interactions
+        adsorbatename: name of adsorbate whose min energy position we seek
+        x_f_start: fractional coordinates at which we initilize the optimization routine (COM of adsorbate)
+        cutoff: vdW LJ cutoff and for short-range Ewald summations
+        verboseflag: print progress?
     """
     if verboseflag
         @printf("Constructing adsorbate %s...\n", adsorbatename)
     end
     adsorbate = Adsorbate(adsorbatename)
-    if (adsorbate.nbeads > 1) & (temperature == -1.0)
-        error("Need to provide temperature to calculate energy with different rotations\n")
-    end
     
     if verboseflag
         @printf("Constructing forcefield object for %s...\n", forcefieldname)
@@ -450,110 +363,85 @@ function find_min_energy_position(framework::Framework,
     end
     
     # get unit cell replication factors for periodic BCs
-    rep_factors = get_replication_factors(framework, cutoff)
+    const rep_factors = get_replication_factors(framework, cutoff)
     if verboseflag
         @printf("\tUnit cell replication factors for cutoff radius %f A: %d x %d x %d\n", cutoff, rep_factors[1], rep_factors[2], rep_factors[3])
     end
     
-    # get epsilons/sigmas for easy computation
-    epsilons, sigmas2 = _generate_epsilons_sigmas2(framework, forcefields)
+    # get Ewald params in case adsorbate is charged
+    const ewald_params = getEwaldparams(framework, cutoff, 1e-6, verboseflag=true)
     
+    # get epsilons/sigmas for easy computation
+    const epsilons, sigmas2 = _generate_epsilons_sigmas2(framework, forcefields)
+    
+    # create functions for optimization routine
     if adsorbate.nbeads == 1  # no need to perform rotations
-        function E(fractional_coord::Array{Float64})
+        function energy(fractional_coord::Array{Float64})
             """
-            Energy (Boltzmann weighted at pos x
+            This function computes the energy (vdW + electrostatic) of adsorboate at given fractional coords
             """
             adsorbate.translate_to(framework.f_to_cartesian_mtrx * fractional_coord)
-            return _vdW_energy_of_adsorbate(adsorbate, epsilons, sigmas2, framework, rep_factors, cutoff) 
+            energy_vdW = _vdW_energy_of_adsorbate(adsorbate, epsilons, sigmas2, framework, rep_factors, cutoff) 
+            energy_electrostatic = electrostatic_energy_of_adsorbate(adsorbate, framework; sr_cutoff=cutoff, rep_factors=rep_factors, ewald_params=ewald_params)
+            return energy_vdW + energy_electrostatic
         end
     else  # rotations necessary!
-        function E(fractional_coord::Array{Float64})
+        function energy(x::Array{Float64})
             """
-            Energy (Boltzmann weighted at pos x
+            This function computes the energy (vdW + electrostatic) of adsorboate at given fractional coords and angles
+
+            x: first three elements are fractional coords, remaining 3 are Euler angles
             """
-            adsorbate.translate_to(framework.f_to_cartesian_mtrx * fractional_coord)
-            boltzmann_weight_sum = 0.0
-            weighted_energy_sum = 0.0
-            for k = 1:num_rotation_samples
-                adsorbate.perform_uniform_random_rotation()
-                _energy = _vdW_energy_of_adsorbate!(adsorbate, epsilons, sigmas22, framework, rep_factors, cutoff) 
-                boltzmann_weight = exp(-_energy / temperature)
-                boltzmann_weight_sum += boltzmann_weight
-                weighted_energy_sum += boltzmann_weight * _energy
-            end
-            return weighted_energy_sum / boltzmann_weight_sum
+            adsorbate.translate_and_rotate_to(framework.f_to_cartesian_mtrx * x[1:3], x[4], x[5], x[6])
+            energy_vdW = _vdW_energy_of_adsorbate(adsorbate, epsilons, sigmas2, framework, rep_factors, cutoff)
+            energy_electrostatic = electrostatic_energy_of_adsorbate(adsorbate, framework; sr_cutoff=cutoff, rep_factors=rep_factors, ewald_params=ewald_params)
+            return energy_vdW + energy_electrostatic
         end
     end
     
-    res = optimize(E, x_f_start, method=:l_bfgs)#method=:nelder_mead)
+    # give starting point for angles if adsorbate has more than 1 bead.
+    if adsorbate.nbeads > 1
+        x_f_start = vcat(x_f_start, [rand() * pi, rand() * pi, rand() * pi])
+    end
+
+    res = optimize(energy, x_f_start, method=:l_bfgs)#method=:nelder_mead)
     
     # If optimization routine found a point outside of the home unit cell, try a new starting point
-    while ((sum(res.minimum .< [-0.000001, -0.00001, -0.000001]) != 0) | (sum(res.minimum .> [1.00001, 1.000001, 1.000010]) != 0))
+    while ((sum(res.minimum[1:3] .< [-0.000001, -0.00001, -0.000001]) != 0) | (sum(res.minimum[1:3] .> [1.00001, 1.000001, 1.000010]) != 0))
         for i = 1:3
             x_f_start[i] = mod(res.minimum[i], 1.0)
             x_f_start[i] += 0.05 * rand()
             x_f_start[i] = mod(x_f_start[i], 1.0)
         end
+
+        if adsorbate.nbeads > 1
+            x_f_start[4] = pi * rand()
+            x_f_start[5] = pi * rand()
+            x_f_start[6] = pi * rand()
+        end
         
         if verboseflag
             @printf("Fractional coords went outside of unit box; trying another starting point (%f, %f, %f)\n", x_f_start[1], x_f_start[2], x_f_start[3])
+        else
+            @printf("Found optimal coords outside home box, retrying...\n")
         end
-        res = optimize(E, x_f_start, method=:l_bfgs)
+        res = optimize(energy, x_f_start, method=:l_bfgs)
  #         error("Fractional coords went outside of unit box; choose better starting point\n")
         # bring into home unit cell (Fractional coords in [0,1]) and perturb randomly
     end
-    x_min = framework.f_to_cartesian_mtrx * res.minimum
+    x_min = framework.f_to_cartesian_mtrx * res.minimum[1:3]
     if verboseflag
         @printf("Minimum E= %f kJ/mol at xf = (%f, %f, %f); x = (%f, %f, %f)\n", 
             res.f_minimum * 8.314 / 1000.0, 
             res.minimum[1], res.minimum[2], res.minimum[3],
             x_min[1], x_min[2], x_min[3])
     end
-
-    return Dict("minE(kJ/mol)" => res.f_minimum * 8.314 / 1000.0, 
-                "xf_min" => res.minimum,
-                "x_min" => x_min)
-end
-
-function get_optimal_rotation(adsorbate::Adsorbate, 
-                              structurename::AbstractString, 
-                              forcefieldname::AbstractString; 
-                              num_rotation_samples::Int=500, 
-                              cutoff::Float64=12.5)
-    """
-    Explore different rotations of the adsorbate and record the configuration of the one with the lowest energy
-    """
-    if (adsorbate.nbeads == 1)
-        error("Dude, don't need rotations for a spherical adsorbate\n")
+   
+    if adsorbate.nbeads > 1 
+        adsorbate.translate_and_rotate_to(x_min, res.minimum[4], res.minimum[5], res.minimum[6])
+    else
+        adsorbate.to(x_min)
     end
 
-    framework = Framework(structurename)
-    
-    @printf("Constructing forcefield object for %s...\n", forcefieldname)
-    forcefields = Forcefield[]  # list of forcefields
-    for b = 1:adsorbate.nbeads
-        @printf("\tBead %s...\n", adsorbate.bead_names[b])
-        push!(forcefields, Forcefield(forcefieldname, adsorbate.bead_names[b], cutoff=cutoff))
-    end
-    
-    # get unit cell replication factors for periodic BCs
-    rep_factors = get_replication_factors(framework, cutoff)
-    
-    # get epsilons/sigmas for easy computation
-    epsilons, sigmas2 = _generate_epsilons_sigmas2(framework, forcefields)
-    
-    E_min = _vdW_energy_of_adsorbate(adsorbate, epsilons, sigmas2, framework, rep_factors, cutoff)
-    opt_bead_xyz = adsorbate.bead_xyz
-    for i = 1:num_rotation_samples
-        adsorbate.perform_uniform_random_rotation()
-        E = _vdW_energy_of_adsorbate(adsorbate, epsilons, sigmas2, framework, rep_factors, cutoff) 
-        if E < E_min
-            E_min = E
-            opt_bead_xyz = adsorbate.bead_xyz
-        end
-    end
-
-    adsorbate.bead_xyz = opt_bead_xyz
-    
-    return adsorbate, E_min
+    return adsorbate, res.f_minimum
 end
