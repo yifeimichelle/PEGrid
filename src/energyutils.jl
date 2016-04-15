@@ -6,58 +6,82 @@ include("forcefield.jl")
 include("adsorbates.jl")
 include("getEwaldparams.jl")
 using Optim
-using ParallelAccelerator
+ # using ParallelAccelerator
     
 # Vacuum permittivity eps0 = 8.854187817e-12 # C^2/(J-m)
 # 1 m = 1e10 A, 1 e = 1.602176e-19 C, kb = 1.3806488e-23 J/K
 # 8.854187817e-12 C^2/(J-m) [1 m / 1e10 A] [1 e / 1.602176e-19 C]^2 [kb = 1.3806488e-23 J/K]
 const epsilon_0 = 4.7622424954949676e-7;  # \epsilon_0 vacuum permittivity units: electron charge^2 /(A - K)
 
-function _electrostatic_potential(xyz_coord::Array{Float64},
-                                 framework::Framework,
+function electrostatic_potential(x::Array{Float64, 1},
+                                 charges::Array{Float64, 1},
+                                 xf_charges::Array{Float64, 2},
+                                 x_charges::Array{Float64, 2},
+                                 f_to_cartesian_mtrx::Array{Float64, 2},
+                                 cartesian_to_f_mtrx::Array{Float64, 2},
+                                 reciprocal_lattice::Array{Float64, 2},
+                                 v_unitcell::Float64,
                                  rep_factors::Array{Int, 1},
                                  sr_cutoff::Float64,
                                  alpha::Float64,
-                                 k_reps::Array{Int};
+                                 k_reps::Array{Int, 1};
                                  verboseflag::Bool=false)
     """
-    Compute electrostatic energy at a point inside a Framework using EWald summations.
+    Compute electrostatic energy at a point in a periodic system of point charges.
     
     Parameters:
-        xyz_coord: the Cartesian (x,y,z) coordinate inside framework where we seek electrostatic potential
-        framework: the crystal structure in PEGrid Framework type
-        rep_factors: x,y,z replication factors of primitive unit cell for PBCs for short-range energy calculations
+        x: the Cartesian (x,y,z) coordinate inside the system where we seek electrostatic potential
+        charges: array of values of point charges in the system
+        xf_charges: fractional coords of charges, stored column-wise
+        x_charges: Cartesian coords of charges, stored column-wise
+        f_to_cartesian_mtrx: matrix to convert from fractional to Cartesian coordinates
+        cartesian_to_f_mtrx: matrix to convert from Cartesian to fractional coordinates
+        reciprocal_lattice: matrix whose columns represent reciprocal lattice
+        v_unitcell: volume of unit cell
+        rep_factors: x, y, z replication factors of home unit cell for PBCs for short-range energy calculations
         srcutoff: short-range cutoff distance
-        alpha: decay parameter for long-range calcs
+        alpha: decay parameter for long-range calcs (units: 1/A)
         k_reps: number of replications in k-space for long-range calcs
     """
-    # get fractional coord of bead
-    fractional_coord::Array{Float64, 1} = framework.cartesian_to_f_mtrx * xyz_coord
+    # get fractional coord of point of interest
+    xf::Array{Float64, 1} = cartesian_to_f_mtrx * x
+    ncharges::Int = length(charges)
     
     # reflect bead to [0,1] via periodic boundary conditions
-    fractional_coord[1] = mod(fractional_coord[1], 1.0)
-    fractional_coord[2] = mod(fractional_coord[2], 1.0)
-    fractional_coord[3] = mod(fractional_coord[3], 1.0)
+    xf[1] = mod(xf[1], 1.0)
+    xf[2] = mod(xf[2], 1.0)
+    xf[3] = mod(xf[3], 1.0)
 
     ######
     ######  Short-range
     ######
-    const sqrt_alpha = sqrt(alpha) # compute sqrt(\alpha) here to save time
     E_sr::Float64 = 0.0  # short range energy
     # loop over adjacent unit cells to implement periodic boundary conditions
-    for rep_x = -rep_factors[1]:rep_factors[1]
-        for rep_y = -rep_factors[2]:rep_factors[2]
-            for rep_z = -rep_factors[3]:rep_factors[3]
-                # get vector between this point and framework atoms in fractional space
-                @inbounds dx::Array{Float64} = broadcast(-, fractional_coord + 1.0 * [rep_x, rep_y, rep_z], framework.fractional_coords)
+    for rep_x = 0:(rep_factors[1]-1)
+        for rep_y = 0:(rep_factors[2]-1)
+            for rep_z = 0:(rep_factors[3]-1)
+                # get vector between this point and point charges in fractional space
+                @inbounds dx::Array{Float64} = broadcast(-, xf + 1.0 * [rep_x, rep_y, rep_z], xf_charges)
+                
+                # apply nearest image convention
+                for k = 1:3
+                    for j = 1:ncharges
+                        if dx[k, j] > 0.5 * rep_factors[k]
+                            @inbounds dx[k, j] -= 1.0 * rep_factors[k]
+                        end
+                        if dx[k, j] < -0.5 * rep_factors[k]
+                            @inbounds dx[k, j] += 1.0 * rep_factors[k]
+                        end
+                    end
+                end
 
                 # transfer to Cartesian coords
-                @inbounds dx = framework.f_to_cartesian_mtrx * dx
+                @inbounds dx = f_to_cartesian_mtrx * dx
 
-                @inbounds for i = 1:framework.natoms
+                @inbounds for i = 1:ncharges
                     @inbounds r::Float64 = norm(dx[:, i])
                     if r < sr_cutoff
-                        @inbounds E_sr += framework.charges[i] / r * erfc(r * sqrt_alpha)
+                        @inbounds E_sr += charges[i] / r * erfc(r * alpha)
                     end
                 end
             end  # end replication in x-direction
@@ -68,8 +92,9 @@ function _electrostatic_potential(xyz_coord::Array{Float64},
     ######
     ######  Long-range
     ######
-    # Cartesian vector from point to framework atoms (in matrix)
-    @inbounds x_framework_to_pt::Array{Float64} = broadcast(-, xyz_coord, framework.f_to_cartesian_mtrx * framework.fractional_coords)
+    const alpha_sqrd_times_four = 4.0 * alpha ^ 2 # compute 4 \alpha^2 here to save time
+    # Cartesian vector from point of interest, x, to charges. Stored in matrix form.
+    @inbounds x_to_charge::Array{Float64} = broadcast(-, x, x_charges)
     E_lr::Float64 = 0.0
     # use symmetry: cos(x) = cos(-x). So go from 0:k_reps in x-direction, multiply by two except for kx == 0.
     # see here http://physics.stackexchange.com/questions/205794/symmetry-in-program-for-ewald-summation
@@ -82,30 +107,30 @@ function _electrostatic_potential(xyz_coord::Array{Float64},
                 end
                 
                 # get the k-vector
-                k::Array{Float64, 1} = framework.reciprocal_lattice * [kx, ky, kz]
+                k::Array{Float64, 1} = reciprocal_lattice * [kx, ky, kz]
                 magnitude_k_2::Float64 = dot(k, k)  # its magnitude, squared
                 
                 # dot product of k-vector and dx
-                @inbounds k_dot_dx::Array{Float64} = transpose(k) * x_framework_to_pt
+                @inbounds k_dot_dx::Array{Float64} = transpose(k) * x_to_charge
                 
                 E_lr_this_k::Float64 = 0.0
                 
-                @simd for i = 1:framework.natoms
-                    @inbounds E_lr_this_k += framework.charges[i] * cos(k_dot_dx[i])
+                @simd for i = 1:ncharges
+                    @inbounds E_lr_this_k += charges[i] * cos(k_dot_dx[i])
                 end
                 
                 # two is for symmetry!
                 if (kx == 0)
-                    E_lr_this_k = E_lr_this_k / magnitude_k_2 * exp(- magnitude_k_2 / (4.0 * alpha))
+                    E_lr_this_k = E_lr_this_k / magnitude_k_2 * exp(- magnitude_k_2 / (alpha_sqrd_times_four))
                 else
-                    E_lr_this_k = 2.0 * E_lr_this_k / magnitude_k_2 * exp(- magnitude_k_2 / (4.0 * alpha))
+                    E_lr_this_k = 2.0 * E_lr_this_k / magnitude_k_2 * exp(- magnitude_k_2 / (alpha_sqrd_times_four))
                 end
                 E_lr += E_lr_this_k
             end
         end
     end
 
-    E_lr = E_lr / framework.v_unitcell / epsilon_0
+    E_lr = E_lr / v_unitcell / epsilon_0
 
     if verboseflag
         @printf("E, long range = %f K\n", E_lr)
@@ -113,39 +138,75 @@ function _electrostatic_potential(xyz_coord::Array{Float64},
     end
     return E_lr + E_sr
 end
-
-function _vdW_energy_of_bead(xyz_coord::Array{Float64},
-                             epsilons::Array{Float64},
-                             sigmas2::Array{Float64},
-                             framework::Framework,
-                             rep_factors::Array{Int, 1},
-                             cutoff2::Float64)
+        
+function electrostatic_potential(x::Array{Float64}, framework::Framework, rep_factors::Array{Int}, 
+                                 sr_cutoff::Float64, alpha::Float64, k_reps::Array{Int}; verboseflag::Bool=false)
     """
-    Compute Van der Waals interaction energy via the LJ potential of a bead at xyz_coord (Cartesian!)
+    Compute electrostatic potential inside of a framework.
+    
+    Parameters:
+        x: Cartesian coordinate of point of interest
+        framework: crystal structure in Framework PEGrid object
+        rep_factors: x, y, z replication factors of home unit cell for PBCs for short-range energy calculations
+        srcutoff: short-range cutoff distance
+        alpha: decay parameter for long-range calcs (units: 1/A)
+        k_reps: number of replications in k-space for long-range calcs
+        verboseflag: print stuff
+    """
+    x_framework = framework.f_to_cartesian_mtrx * framework.fractional_coords
+    return electrostatic_potential(x, framework.charges, framework.fractional_coords, x_framework, 
+                                    framework.f_to_cartesian_mtrx, framework.cartesian_to_f_mtrx,
+                                    framework.reciprocal_lattice, framework.v_unitcell,
+                                    rep_factors, sr_cutoff, alpha, k_reps, verboseflag=verboseflag)
+end
+
+function vdW_energy_of_bead(x::Array{Float64, 1},
+                            epsilons::Array{Float64},
+                            sigmas2::Array{Float64},
+                            framework::Framework,
+                            rep_factors::Array{Int, 1},
+                            cutoff2::Float64)
+    """
+    Compute Van der Waals interaction energy via the LJ potential of a bead at Cartesian coord x.
    
     Parameters:
-        xyz_coord: Cartesian coordinate of bead. shape: (3,)
-        epsilons: Lennard-Jones epsilon parameters for bead with corresponding framework atoms. shape: (framework.natoms,)
-        sigmas2: Lennard-Jones sigma parameters (squared!) for bead with corresponding framework atoms. shape: (framework.natoms,)
+        x: Cartesian coordinate of bead
+        epsilons: Lennard-Jones epsilon parameters for bead with corresponding framework atoms.
+        sigmas2: Lennard-Jones sigma parameters (squared!) for bead with corresponding framework atoms.
         framework: the structure (PEGrid object)
         rep_factors: x,y,z replication factors of primitive unit cell for PBCs
         cutoff2: Lennard-Jones cutoff distance, squared
     """
     # get fractional coord of bead
-    fractional_coord::Array{Float64,1} = framework.cartesian_to_f_mtrx * xyz_coord
+    xf::Array{Float64, 1} = framework.cartesian_to_f_mtrx * x
 
     # reflect bead to [0,1] via periodic boundary conditions
-    fractional_coord[1] = mod(fractional_coord[1], 1.0)
-    fractional_coord[2] = mod(fractional_coord[2], 1.0)
-    fractional_coord[3] = mod(fractional_coord[3], 1.0)
+    xf[1] = mod(xf[1], 1.0)
+    xf[2] = mod(xf[2], 1.0)
+    xf[3] = mod(xf[3], 1.0)
 
     energy::Float64 = 0.0  # initialize energy of this bead as 0 to subsequently add pairwise contributions
     # loop over adjacent unit cells to implement periodic boundary conditions
-    for rep_x = -rep_factors[1]:rep_factors[1]
-        for rep_y = -rep_factors[2]:rep_factors[2]
-            for rep_z = -rep_factors[3]:rep_factors[3]
+ #     for rep_x = -rep_factors[1]:rep_factors[1]
+ #         for rep_y = -rep_factors[2]:rep_factors[2]
+ #             for rep_z = -rep_factors[3]:rep_factors[3]
+    for rep_x = 0:(rep_factors[1]-1)
+        for rep_y = 0:(rep_factors[2]-1)
+            for rep_z = 0:(rep_factors[3]-1)
                 # get vectors between this point and the framework atom (perhaps shifted to ghost unit cell)
-                dx::Array{Float64} = broadcast(-, framework.fractional_coords, fractional_coord - 1.0 * [rep_x, rep_y, rep_z])
+                dx::Array{Float64} = broadcast(-, framework.fractional_coords, xf - 1.0 * [rep_x, rep_y, rep_z])
+                
+                # apply nearest image convention
+                for k = 1:3
+                    for j = 1:framework.natoms
+                        if dx[k, j] > 0.5 * rep_factors[k]
+                            @inbounds dx[k, j] -= 1.0 * rep_factors[k]
+                        end
+                        if dx[k, j] < -0.5 * rep_factors[k]
+                            @inbounds dx[k, j] += 1.0 * rep_factors[k]
+                        end
+                    end
+                end
                 
                 # convert to Cartesian coords
                 dx = framework.f_to_cartesian_mtrx * dx
@@ -167,37 +228,70 @@ function _vdW_energy_of_bead(xyz_coord::Array{Float64},
     return energy
 end
 
-function _vdW_energy_of_adsorbate(adsorbate::Adsorbate,
-            epsilons::Array{Float64}, 
-            sigmas2::Array{Float64},
-            framework::Framework,
-            rep_factors::Array{Int, 1}, 
-            cutoff::Float64)
+function vdW_energy_of_adsorbate(adsorbate::Adsorbate,
+                                 epsilons::Array{Float64}, 
+                                 sigmas2::Array{Float64},
+                                 framework::Framework,
+                                 rep_factors::Array{Int, 1}, 
+                                 cutoff2::Float64)
     """
     Compute Van der Waals interaction energy via pairwise Lennard Jones potentials.
     
-    :param Adsorbate adsorbate: the molecule (includes position) that we want to calc the energy of
-    :param Array{Float64} epsilons: Lennard-Jones epsilon parameters corresponding to each framework atom in the array
-    :param Array{Float64} sigmas2: Lennard-Jones sigma parameters (squared) corresponding to each framework atom in the array
-    :param Array{Int} rep_factors: x,y,z replication factors of primitive unit cell for PBCs
-    :param Float64 cutoff: Lennard-Jones cutoff distance
-    :returns: Float64 E: energy of adsorbate at (x_f,y_f,z_f) in Kelvin (well, same units as epsilon)
+    Parameters:
+        adsorbate: PEGrid adsorbate object that contains LJ beads and positions of adsorbate 
+        epsilons: Lennard-Jones epsilon parameters for bead with corresponding framework atoms
+        sigmas2: Lennard-Jones sigma parameters (squared!) for bead with corresponding framework atoms
+        rep_factors: x,y,z replication factors of home unit cell for PBCs
+        cutoff2: Lennard-Jones cutoff distance, squared
     """
     energy = 0.0
     for b = 1:adsorbate.nbeads  # for each bead in adsorbate
-        energy += _vdW_energy_of_bead(adsorbate.x[:, b], epsilons[:, b], sigmas2[:, b], framework, rep_factors, cutoff*cutoff)
+        energy += vdW_energy_of_bead(adsorbate.x[:, b], epsilons[:, b], sigmas2[:, b], framework, rep_factors, cutoff2)
     end  # end loop over beads in adsorbate
 
     return energy  # in Kelvin
 end
 
+function vdW_energy_of_adsorbate(adsorbate::Adsorbate, 
+                                 framework::Framework, 
+                                 forcefieldname::AbstractString; 
+                                 cutoff::Float64=12.5)
+    """
+    Get van der Waals energy of adsorbate inside a framework. This function is overloaded via above. This one is less efficient.
+
+    Parameters:
+        adsorbate: PEGrid Adsorbate object (contains Cartesian coords of adsorbate)
+        framework: PEGrid Framework object
+        forcefieldname: name of force field to use for Lennard-Jones parameters
+        cutoff: LJ cutoff distance
+    """
+    # Construct forcefields
+    forcefields = Forcefield[]  # list of forcefields
+    for b = 1:adsorbate.nbeads
+        push!(forcefields, Forcefield(forcefieldname, adsorbate.bead_names[b], cutoff=cutoff))
+    end
+    
+    # get unit cell replication factors for periodic BCs
+    rep_factors = get_replication_factors(framework, cutoff)
+    
+    # get position array and epsilons/sigmas for easy computation
+    epsilons, sigmas2 = _generate_epsilons_sigmas2(framework, forcefields)
+
+    # pass this information to the faster version of this function
+    return vdW_energy_of_adsorbate(adsorbate,
+                                   epsilons,
+                                   sigmas2,
+                                   framework,
+                                   rep_factors, 
+                                   cutoff * cutoff)
+end
+
+
 function get_replication_factors(framework::Framework, cutoff::Float64)
     """
-    Get replication factors for the unit cell such that only directly adjacent ghost unit cells 
-        are required for consideration in applying periodic boundary conditions (PBCs).
-    That is, a particle in the "home" unit cell will not be within the cutoff distance of 
-        any particles two ghost cells away from the home cell.
-    This is done by ensuring that a sphere of radius cutoff can fit inside the unit cell
+    Get replication factors for the unit cell such that the nearest image convention can be used
+        for applying periodic boundary conditions (PBCs).
+    This is done by ensuring that a sphere of radius 2.0 * cutoff can fit inside the unit cell
     
     :param Framework framework: the crystal structure Framework object
     :param Float64 cutoff: Lennard-Jones cutoff distance, beyond which VdW interactions are approximated as zero.
@@ -216,22 +310,22 @@ function get_replication_factors(framework::Framework, cutoff::Float64)
     c0 = [a b c] * [0.5, 0.5, 0.5]
     
     rep_factors = [1, 1, 1] # replication factors stored here. Initialize as 1 x 1 x 1 supercell.
-    # replicate unit cell until the distance of c0 to the 3 faces is greater than cutoff/2
+    # replicate unit cell until the distance of c0 to the 3 faces is greater than cutoff
     # distance of plane to point: http://mathworld.wolfram.com/Point-PlaneDistance.html
     # a replication.
-    while abs(dot(n_bc, c0)) / vecnorm(n_bc) < cutoff / 2.0
+    while abs(dot(n_bc, c0)) / vecnorm(n_bc) < cutoff
         rep_factors[1] += 1
         a = a + framework.f_to_cartesian_mtrx[:, 1]
         c0 = [a b c] * [0.5, 0.5, 0.5] # update center
     end
     # b replication
-    while abs(dot(n_ac, c0)) / vecnorm(n_ac) < cutoff / 2.0
+    while abs(dot(n_ac, c0)) / vecnorm(n_ac) < cutoff
         rep_factors[2] += 1
         b = b + framework.f_to_cartesian_mtrx[:, 2]
         c0 = [a b c] * [0.5, 0.5, 0.5] # update center
     end
     # c replication
-    while abs(dot(n_ab, c0)) / vecnorm(n_ab) < cutoff / 2.0
+    while abs(dot(n_ab, c0)) / vecnorm(n_ab) < cutoff
         rep_factors[3] += 1
         c = c + framework.f_to_cartesian_mtrx[:, 3]
         c0 = [a b c] * [0.5, 0.5, 0.5] # update center
@@ -268,30 +362,40 @@ function _generate_epsilons_sigmas2(framework::Framework, forcefields::Array{For
     return epsilons, sigmas2
 end
 
-function vdW_energy_of_adsorbate_config(adsorbate::Adsorbate, framework::Framework, forcefieldname::AbstractString; cutoff::Float64=12.5)
+function electrostatic_energy_of_adsorbate(adsorbate::Adsorbate,
+                                           charges::Array{Float64, 1},
+                                           xf_charges::Array{Float64, 2},
+                                           x_charges::Array{Float64, 2},
+                                           f_to_cartesian_mtrx::Array{Float64, 2},
+                                           cartesian_to_f_mtrx::Array{Float64, 2},
+                                           reciprocal_lattice::Array{Float64, 2},
+                                           v_unitcell::Float64,
+                                           rep_factors::Array{Int, 1},
+                                           sr_cutoff::Float64,
+                                           alpha::Float64,
+                                           k_reps::Array{Int, 1})
     """
-    Get van der Waals energy of adsorbate inside a framework.
-    Parameters:
-        adsorbate: PEGrid Adsorbate object (contains Cartesian coords of adsorbate)
-        framework: PEGrid Framework object
-        forcefieldname: name of force field to use for Lennard-Jones parameters
+    Compute electrostatic energy of adsorbate molecule.
+    This function is fast because it is directly passed the framework information.
+
+    Parameters
     """
-    forcefields = Forcefield[]  # list of forcefields
-    for b = 1:adsorbate.nbeads
-        push!(forcefields, Forcefield(forcefieldname, adsorbate.bead_names[b], cutoff=cutoff))
+    if ! adsorbate.charged_flag
+        return 0.0
     end
-    
-    # get unit cell replication factors for periodic BCs
-    rep_factors = get_replication_factors(framework, cutoff)
-    
-    # get position array and epsilons/sigmas for easy computation
-    epsilons, sigmas2 = _generate_epsilons_sigmas2(framework, forcefields)
-    return _vdW_energy_of_adsorbate(adsorbate,
-                                epsilons,
-                                sigmas2,
-                                framework,
-                                rep_factors, 
-                                cutoff)
+
+    energy::Float64 = 0.0
+    for i = 1:adsorbate.nbeads
+        if adsorbate.charges[i] == 0.0
+            continue
+        end
+
+        potential = electrostatic_potential(adsorbate.x[:, i], charges, xf_charges,
+                                            x_charges, f_to_cartesian_mtrx, cartesian_to_f_mtrx, reciprocal_lattice,
+                                            v_unitcell, rep_factors, sr_cutoff, alpha, k_reps)
+        energy += adsorbate.charges[i] * potential
+   end
+   return energy
 end
 
 function electrostatic_energy_of_adsorbate(adsorbate::Adsorbate, framework::Framework; 
@@ -308,25 +412,29 @@ function electrostatic_energy_of_adsorbate(adsorbate::Adsorbate, framework::Fram
     if ! adsorbate.charged_flag
         return 0.0
     end
-    # get unit cell replication factors for periodic BCs
+    
+    # get unit cell replication factors for periodic BCs if not given
     if rep_factors == [-1, -1, -1]
         rep_factors = get_replication_factors(framework, sr_cutoff)
     end
+    
+    # get Ewald parameters if not given
     if ! (haskey(ewald_params, "alpha") & haskey(ewald_params, "k_reps"))
         ewald_params = getEwaldparams(framework, sr_cutoff, 1e-6, verboseflag=true)
     end
 
-    energy = 0.0
-    for i = 1:adsorbate.nbeads
-        if adsorbate.charges[i] == 0.0
-            continue
-        end
-        potential_in_framework = _electrostatic_potential(adsorbate.x[:, i],
-                                         framework, rep_factors, sr_cutoff,
-                                         ewald_params["alpha"], ewald_params["k_reps"])
-        energy += adsorbate.charges[i] * potential_in_framework
-   end
-   return energy
+    return electrostatic_energy_of_adsorbate(adsorbate,
+                                             framework.charges,
+                                             framework.fractional_coords,
+                                             framework.f_to_cartesian_mtrx * framework.fractional_coords,
+                                             framework.f_to_cartesian_mtrx,
+                                             framework.cartesian_to_f_mtrx,
+                                             framework.reciprocal_lattice,
+                                             framework.v_unitcell,
+                                             rep_factors,
+                                             sr_cutoff,
+                                             ewald_params["alpha"],
+                                             ewald_params["k_reps"])
 end
 
 function find_min_energy_position(framework::Framework,
@@ -381,7 +489,7 @@ function find_min_energy_position(framework::Framework,
             This function computes the energy (vdW + electrostatic) of adsorboate at given fractional coords
             """
             adsorbate.translate_to(framework.f_to_cartesian_mtrx * fractional_coord)
-            energy_vdW = _vdW_energy_of_adsorbate(adsorbate, epsilons, sigmas2, framework, rep_factors, cutoff) 
+            energy_vdW = vdW_energy_of_adsorbate(adsorbate, epsilons, sigmas2, framework, rep_factors, cutoff * cutoff) 
             energy_electrostatic = electrostatic_energy_of_adsorbate(adsorbate, framework; sr_cutoff=cutoff, rep_factors=rep_factors, ewald_params=ewald_params)
             return energy_vdW + energy_electrostatic
         end
@@ -393,7 +501,7 @@ function find_min_energy_position(framework::Framework,
             x: first three elements are fractional coords, remaining 3 are Euler angles
             """
             adsorbate.translate_and_rotate_to(framework.f_to_cartesian_mtrx * x[1:3], x[4], x[5], x[6])
-            energy_vdW = _vdW_energy_of_adsorbate(adsorbate, epsilons, sigmas2, framework, rep_factors, cutoff)
+            energy_vdW = vdW_energy_of_adsorbate(adsorbate, epsilons, sigmas2, framework, rep_factors, cutoff * cutoff)
             energy_electrostatic = electrostatic_energy_of_adsorbate(adsorbate, framework; sr_cutoff=cutoff, rep_factors=rep_factors, ewald_params=ewald_params)
             return energy_vdW + energy_electrostatic
         end
