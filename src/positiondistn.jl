@@ -5,9 +5,9 @@ include("framework.jl")
 
 
 function writeprobabilitydistncube(framework::Framework,
-                                   adsorbatepositionfilename::AbstractString, 
-                                   which_adsorbate::AbstractString; 
-                                   binspacing::Float64=1.0, 
+                                   adsorbatepositionfilename::AbstractString,
+                                   which_adsorbate::AbstractString;
+                                   binspacing::Float64=1.0,
                                    outputcubename::AbstractString="",
                                    rep_factor::Int=1)
     """
@@ -17,7 +17,7 @@ function writeprobabilitydistncube(framework::Framework,
     For make volume plots to visualize where molecules adsorb in the material
     """
     ### Partition unit cell into voxels
-    # how many voxels in each direction? 
+    # how many voxels in each direction?
     N_x = floor(Int, rep_factor * framework.a / binspacing) + 1
     N_y = floor(Int, rep_factor * framework.b / binspacing) + 1
     N_z = floor(Int, rep_factor * framework.c / binspacing) + 1
@@ -40,21 +40,21 @@ function writeprobabilitydistncube(framework::Framework,
     xyzfile = open(adsorbatepositionfilename, "r")
     readline(xyzfile)
     readline(xyzfile) # throw away two lines
-    
+
     N_positions = 0
     for line in eachline(xyzfile)
         if length(split(line)) != 4
             continue
         end
         adsorbate = split(line)[1]
-        
+
         if adsorbate == which_adsorbate
             # get (x, y, z) of adsorbate
             N_positions += 1
             x = float(split(line)[2])
             y = float(split(line)[3])
             z = float(split(line)[4])
-           
+
             # get fractional coords
             f_coords = framework.cartesian_to_f_mtrx * [x, y, z]
 
@@ -74,16 +74,16 @@ function writeprobabilitydistncube(framework::Framework,
             if (i > N_x)  |  (j > N_y ) | (k > N_z)
                 error("adsorbate outside of unit cell")
             end
-            
+
             # update counts
             counts[i, j, k] += 1
         end
     end
-    
+
     @assert(sum(counts) == N_positions)
 
     # normalize to make a probability dist'n
-    counts = counts / sum(counts) 
+    counts = counts / sum(counts)
 
     @printf("%d adsorbate %s positions recorded\n", N_positions, which_adsorbate);
 
@@ -118,5 +118,24 @@ function writeprobabilitydistncube(framework::Framework,
     end # end loop in x_f-grid points
     close(probdistn)
     @printf("\tDone. If visualizing in VisIt, do not uncheck the Extend unit cell box when opening the cube.\n")
-    
+
+end
+
+function convert_pdb_to_xyz(inputfilename::AbstractString, outputfilename::AbstractString)
+    """
+    Takes a PDB file and converts it to XYZ format
+    """
+    inputfile = open(inputfilename)
+    outputfile = open(outputfilename, "w")
+    num_lines = readall(pipeline(`grep "ATOM" $inputfilename`, `wc -l`))
+    @printf(outputfile, "%s\n", num_lines)
+    for line in eachline(inputfile)
+        s = split(line)
+        if s[1] == "ATOM"
+            @printf(outputfile, "%s %s %s %s\n", s[3], s[5], s[6], s[7])
+        end
+    end
+    close(inputfile)
+    close(outputfile)
+    @printf("\tDone. Output written to %s\n", outputfilename)
 end

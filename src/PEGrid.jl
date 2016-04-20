@@ -22,5 +22,5 @@ export Framework, # framework.jl
        write_vdW_grid, write_electrostatic_grid, # Grid conflicts with Gadfly...
        getEwaldparams, # getEwaldparams.jl
        grand_canonical_mc, adsorption_isotherm, # gcmc.jl
-       writeprobabilitydistncube # positiondistn.jl
+       writeprobabilitydistncube, convert_pdb_to_xyz # positiondistn.jl
 end
