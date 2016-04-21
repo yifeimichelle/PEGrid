@@ -89,7 +89,7 @@ function writeprobabilitydistncube(framework::Framework,
 
     # Write cube file of probability distn
     if outputcubename == ""
-        outputcubename = framework.structurename * "adsorbate_positions.cube"
+        outputcubename = framework.structurename * "_" * which_adsorbate * "_adsorbate_probability_distn.cube"
     end
     probdistn = open(homedir() * "/PEGrid_output/" * outputcubename, "w")
 
@@ -101,7 +101,7 @@ function writeprobabilitydistncube(framework::Framework,
     @printf(probdistn, "%d %f %f %f\n" , N_y, rep_factor * framework.f_to_cartesian_mtrx[1,2] / N_y, rep_factor * framework.f_to_cartesian_mtrx[2,2] / N_y, 0.0)  # N_y, vector along y-edge of voxel
     @printf(probdistn, "%d %f %f %f\n" , N_z, rep_factor * framework.f_to_cartesian_mtrx[1,3] / N_z, rep_factor * framework.f_to_cartesian_mtrx[2,3] / N_z, rep_factor * framework.f_to_cartesian_mtrx[3,3] / N_z)
 
-    @printf("Writing adsorbate probability distn to cube file:\n\t%s\n\t... ... ...\n", homedir() * "/PEGrid_output/" * framework.structurename * "_adsorbate_probability_distn" * ".cube")
+    @printf("Writing adsorbate probability distn to cube file:\n\t%s\n\t... ... ...\n", homedir() * "/PEGrid_output/" * outputcubename)
     for i in 1:N_x  # loop over x_f-grid points
         for j in 1:N_y  # loop over y_f-grid points
             for k in 1:N_z  # loop over z_f-grid points
