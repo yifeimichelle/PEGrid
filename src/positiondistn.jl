@@ -9,6 +9,7 @@ function writeprobabilitydistncube(framework::Framework,
                                    which_adsorbate::AbstractString;
                                    binspacing::Float64=1.0,
                                    outputcubename::AbstractString="",
+                                   molecule::AbstractString="",
                                    rep_factor::Int=1)
     """
     Takes an xyz file of adsorbate positions in the framework,
@@ -68,10 +69,39 @@ function writeprobabilitydistncube(framework::Framework,
             j = floor(Int, 1 + f_coords[2] / dy_f)
             k = floor(Int, 1 + f_coords[3] / dz_f)
 
+            # check for particles out of bound due to numerical rounding
+            if (i < 1)
+                f_coords[1] += 0.001
+            end
+            if (j < 1)
+                f_coords[2] += 0.001
+            end
+            if (k < 1)
+                f_coords[3] += 0.001
+            end
+            if (i > N_x)
+                f_coords[1] -= 0.001
+            end
+            if (j > N_y )
+                f_coords[2] -= 0.001
+            end
+            if (k > N_z)
+                f_coords[3] -= 0.001
+            end
+
+            # get voxel index to which particle belongs
+            i = floor(Int, 1 + f_coords[1] / dx_f)
+            j = floor(Int, 1 + f_coords[2] / dy_f)
+            k = floor(Int, 1 + f_coords[3] / dz_f)
+
             if (i < 1)  |  (j < 1) | (k < 1)
+                @printf("%s",line)
+                @printf("%d %d %d\n", i, j, k)
                 error("adsorbate outside of unit cell")
             end
             if (i > N_x)  |  (j > N_y ) | (k > N_z)
+                @printf("%s",line)
+                @printf("%d %d %d\n", i, j, k)
                 error("adsorbate outside of unit cell")
             end
 
@@ -82,6 +112,10 @@ function writeprobabilitydistncube(framework::Framework,
 
     @assert(sum(counts) == N_positions)
 
+    println("Max number of adsorbates seen in a bin: ", maximum(counts))
+    println("Fraction of bins that are empty: ", sum(counts .== 0) / length(counts))
+    println("Number of non-empty bins: ", countnz(counts))
+    println("Number of bins that have one adsorbate: ", sum(counts .== 1))
     # normalize to make a probability dist'n
     counts = counts / sum(counts)
 
@@ -89,7 +123,7 @@ function writeprobabilitydistncube(framework::Framework,
 
     # Write cube file of probability distn
     if outputcubename == ""
-        outputcubename = framework.structurename * "_" * which_adsorbate * "_adsorbate_probability_distn.cube"
+        outputcubename = framework.structurename * "_" * molecule * which_adsorbate * "_adsorbate_probability_distn.cube"
     end
     probdistn = open(homedir() * "/PEGrid_output/" * outputcubename, "w")
 
