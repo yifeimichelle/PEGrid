@@ -2,7 +2,7 @@
 module PEGrid
 
 # this is where crystal structure files, adsorbate and forcefield input files are stored
-global const PEGRID_DATA_DIR = homedir() * "/Dropbox/PEGrid/data"
+global const PEGRID_DATA_DIR = homedir() * "/LSMO/Michelle/Research/PEGrid/data"
 @printf("Your data directory is set as:\n%s\n", PEGRID_DATA_DIR)
 @printf("Change the variable PEGRID_DATA_DIR in PEGrid.jl if you wish to change this\n")
  # global const PEGRID_OUTPUT_DIR = homedir() * "/PEGrid_output"

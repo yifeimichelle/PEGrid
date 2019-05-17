@@ -3,11 +3,11 @@
 ###
 include("framework.jl")
 
-function generate_visit_script(structurename::String, adsorbate::String)
+function generate_visit_script(structurename::String, adsorbate::String, molecule::String, loading::String)
     """
     Generates a Visit visualization script that one can just paste into Visit to generate PE viz
     """
-    f = open(structurename * "_" * adsorbate * "_visit_script.visit", "w")
+    f = open(structurename * "_" * adsorbate * "_" * molecule * "_" * loading * "_visit_script.visit", "w")
 
     # xyz file viz
     write(f, "# Open .xyz file\n")
@@ -23,7 +23,7 @@ function generate_visit_script(structurename::String, adsorbate::String)
 
     # cube viz
     write(f, "# Open .cube file\n")
-    @printf(f, "OpenDatabase(\"%s/PEGrid_output/%s_%s.cube\", 0)\n", homedir(), structurename, adsorbate)
+    @printf(f, "OpenDatabase(\"%s/PEGrid_output/%s/%s_%s%s_adsorbate_probability_distn.cube\", 0)\n", homedir(), loading, structurename, molecule, adsorbate)
     @printf(f, "AddPlot(\"Contour\", \"electron_density\", 1, 0)")
 
     # various settings
@@ -188,7 +188,7 @@ AnnotationAtts.databaseInfoFont.italic = 0
 AnnotationAtts.databaseInfoExpansionMode = AnnotationAtts.File  # File, Directory, Full, Smart, SmartDirectory
 AnnotationAtts.databaseInfoTimeScale = 1
 AnnotationAtts.databaseInfoTimeOffset = 0
-AnnotationAtts.legendInfoFlag = 0
+AnnotationAtts.legendInfoFlag = 1
 AnnotationAtts.backgroundColor = (255, 255, 255, 255)
 AnnotationAtts.foregroundColor = (0, 0, 0, 255)
 AnnotationAtts.gradientBackgroundStyle = AnnotationAtts.Radial  # TopToBottom, BottomToTop, LeftToRight, RightToLeft, Radial
